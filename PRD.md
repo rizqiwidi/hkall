@@ -59,15 +59,42 @@
 - [x] clean mod_py2exe output (am start + linux one-liner)
 - [x] smoke all modules after fixes
 
+### v0.3.0 (2026-10-24) — storage, multi-session C2, config, plugins
+- [x] sqlite result store `data/rs.db` + `history` module
+- [x] `--out` save support (best-effort pointer)
+- [x] C2 multi-session (sessions/use/kill) with opt-in XOR stream obfuscation
+- [x] config profiles `config.json` (persist presets via `cfg` module)
+- [x] plugin loader (`modules/*.py` → `PLUGIN` dict) + sample `hello`
+- [x] banner grab in scan (per open port, optional)
+- [x] ops auto-exec (run-all snapshot)
+- [x] README + tools tracked in PRD
+- [ ] encrypted C2 (TLS) — backlog
+
 ## 6. Roadmap / backlog
 - [ ] wifi audit (needs root/capabilities)
 - [ ] persistence auto-start (termux boot / `~/.bashrc`)
-- [ ] ARP scan, real banner grab
+- [ ] ARP scan
+- [ ] banner grab → done in v0.3.0
 - [ ] .apk standalone (kotlin)
-- [ ] encryption of C2 traffic (TLS)
-- [ ] modules/ dir plugin loading
+- [ ] encryption of C2 traffic (TLS) — relay XOR only placeholder
+- [x] modules/ dir plugin loading → v0.3.0
+- [x] sqlite results store → v0.3.0
+- [x] config profiles → v0.3.0
+- [x] multi-session C2 → v0.3.0
 
 ## 7. Changelog
 - 2026-10-24 v0.1.0 initial (8 modules)
 - 2026-10-24 v0.2.0 TUI + CLI + ops (12 modules)
 - 2026-10-24 v0.2.1 fixes
+- 2026-10-24 v0.3.0 storage + multi-session C2 + config + plugins (14+ modules)
+
+### v0.3.0 (2026-10-24) — storage, multi-session C2, config, plugins
+- [x] sqlite result store `data/rs.db` + `history` module
+- [x] `--out` save support (best-effort pointer)
+- [x] C2 multi-session (sessions/use/kill) with opt-in XOR stream obfuscation
+- [x] config profiles `config.json` (persist presets via `cfg` module)
+- [x] plugin loader (`modules/*.py` → `PLUGIN` dict) + sample `hello`
+- [x] banner grab in scan (per open port, optional)
+- [x] ops auto-exec (run-all snapshot)
+- [x] README + .gitignore updated
+- [ ] encrypted C2 (TLS) — backlog
