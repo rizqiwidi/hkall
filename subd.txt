@@ -1,0 +1,10 @@
+www
+mail
+autodiscover
+dev
+api
+admin
+portal
+git
+vpn
+ftp

