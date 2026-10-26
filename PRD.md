@@ -6,7 +6,7 @@
 - **Name:** hkall
 - **Platform:** Android/Termux (Python 3), portable to Linux
 - **Type:** modular offensive toolkit (recon, shells, C2, post-exploit, payload, net, device ops)
-- **Version:** 0.3.2 (current)
+- **Version:** 0.3.3 (current)
 - **Repo:** https://github.com/rizqiwidi/hkall
 
 ## 2. Requirements
@@ -85,6 +85,16 @@
 - [x] update PRD.md (v0.3.1 + v0.3.2 changelog, module matrix complete)
 - [ ] encrypted C2 (TLS) — still backlog
 
+### v0.3.3 (2026-10-26) — deep audit fixes
+- [x] payload non-obs: correct shell path (`/system/bin/sh` → `/bin/sh` → `sh`) + reconnect
+- [x] payload obs: remove dead `r()`; indent fixed; syntax verified
+- [x] recv: path traversal sanitized (`basename`), no infinite loop on empty meta
+- [x] c2: BrokenPipe/closed-session guards (no crash on dead session)
+- [x] discover: thread cap batch 64 (was 254 at once)
+- [x] plugin loader: warn+skip key shadowing builtin
+- [x] history: table auto-created on show (no crash on empty db)
+- [ ] spray success detection (code-based only → false positives) — backlog
+
 ## 6. Roadmap / backlog
 - [ ] wifi audit (needs root/capabilities)
 - [ ] persistence auto-start (termux boot / `~/.bashrc`)
@@ -104,3 +114,4 @@
 - 2026-10-24 v0.3.0 storage + multi-session C2 + config + plugins (14+ modules)
 - 2026-10-24 v0.3.1 fix NameError + add subd brute + c2 guard
 - 2026-10-26 v0.3.2 payload XOR fix, wordlist, install.sh fix, README rewrite
+- 2026-10-26 v0.3.3 deep-audit fixes: payload shell path, recv traversal+hang guard, c2 session guards, discover thread cap, plugin shadow warn, history empty-db
