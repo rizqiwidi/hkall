@@ -6,7 +6,7 @@
 - **Name:** hkall
 - **Platform:** Android/Termux (Python 3), portable to Linux
 - **Type:** modular offensive toolkit (recon, shells, C2, post-exploit, payload, net, device ops)
-- **Version:** 0.3.3 (current)
+- **Version:** 0.3.4 (current)
 - **Repo:** https://github.com/rizqiwidi/hkall
 
 ## 2. Requirements
@@ -38,6 +38,9 @@
 | payload | Android payload builder | ip, port | `data/payload.py` (reconnect + XOR) |
 | exe2 | Shell payload variants | ip, port | termux am / linux one-liner |
 | lan | LAN host discoverer | cidr | hosts up (7-port probe) |
+| arp | ARP scan (root) | cidr | MAC/IP live hosts (AF_PACKET) |
+| wifi | Wifi audit | — | scaninfo + connectioninfo |
+| persist | Persistence | on-boot cmd | boot script + bashrc hook |
 | ops | Device ops | sub-op | termux-api battery/gps/sms/cam/mic/vibrate/clipboard |
 | serve | HTTP static server | port, dir | static file staging |
 | spray | Web form credential spray | url, form fields | hits logged to rs.db |
@@ -95,13 +98,21 @@
 - [x] history: table auto-created on show (no crash on empty db)
 - [ ] spray success detection (code-based only → false positives) — backlog
 
+### v0.3.4 (2026-10-26) — new modules: wifi, persist, arp
+- [x] `wifi` module — termux-api scaninfo + connectioninfo
+- [x] `persist` module — opt-in boot script + `~/.bashrc` hook
+- [x] `arp` module — raw socket AF_PACKET ARP sweep (root, Linux)
+- [x] registry 18 → 21 modules
+- [x] README updated (21 modules)
+- [x] PRD module matrix + roadmap updated
+
 ## 6. Roadmap / backlog
-- [ ] wifi audit (needs root/capabilities)
-- [ ] persistence auto-start (termux boot / `~/.bashrc`)
-- [ ] ARP scan (needs scapy or raw sockets)
+- [x] wifi audit (termux-api scaninfo/connectioninfo) → v0.3.4
+- [x] persistence auto-start (termux boot / `~/.bashrc`) → v0.3.4
+- [x] ARP scan (AF_PACKET, root) → v0.3.4
 - [x] banner grab → v0.3.0
-- [x] .apk standalone (kotlin) — deferred
-- [ ] encryption of C2 traffic (TLS) — relay XOR only placeholder
+- [ ] .apk standalone (kotlin) — needs PC + gradle
+- [ ] encrypted C2 traffic (TLS) — relay XOR placeholder
 - [x] modules/ dir plugin loading → v0.3.0
 - [x] sqlite results store → v0.3.0
 - [x] config profiles → v0.3.0
@@ -115,3 +126,4 @@
 - 2026-10-24 v0.3.1 fix NameError + add subd brute + c2 guard
 - 2026-10-26 v0.3.2 payload XOR fix, wordlist, install.sh fix, README rewrite
 - 2026-10-26 v0.3.3 deep-audit fixes: payload shell path, recv traversal+hang guard, c2 session guards, discover thread cap, plugin shadow warn, history empty-db
+- 2026-10-26 v0.3.4 wifi + persist + arp modules (21 total)

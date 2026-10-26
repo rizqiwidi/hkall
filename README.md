@@ -11,16 +11,15 @@ python hkall.py
 ```
 Or: `curl -sL https://github.com/rizqiwidi/hkall/raw/master/install.sh | sh`
 
-## TUI
-Run `python hkall.py`, pick a number. 18 built-in modules:
-
+## TUI — 21 builtin modules
 ```
   [1] Port scanner          [2] Web enumerator       [3] DNS / banner lookup
   [4] Subdomain brute DNS   [5] Reverse shell gen    [6] C2 listener (multi-session)
   [7] Keylogger             [8] Exfil client         [9] Exfil server
- [10] Android payload      [11] Shell payload var  [12] LAN host discoverer
- [13] Device ops            [14] HTTP static server [15] Web form spray
- [16] Config / profile      [17] History (results)  [18] Exit
+ [10] Android payload     [11] Shell payload var  [12] LAN host discoverer
+ [13] ARP scan            [14] Wifi audit         [15] Persistence
+ [16] Device ops          [17] HTTP static server [18] Web form spray
+ [19] Config / profile    [20] History (results)  [21] Exit
 ```
 
 ## CLI one-shot
@@ -35,6 +34,9 @@ python hkall.py -m cfg
 python hkall.py -m c2 --port 4444
 python hkall.py -m subd --host example.com
 python hkall.py -m lan --cidr 192.168.1.0/24
+python hkall.py -m arp --cidr 192.168.1.0/24
+python hkall.py -m wifi
+python hkall.py -m persist
 python hkall.py -m spray --host https://login.example.com
 ```
 
@@ -53,7 +55,10 @@ python hkall.py -m spray --host https://login.example.com
 | recv | Exfil server | receive file from `exfil` client |
 | payload | Payload builder | Python reconnect shell (plain or XOR) |
 | exe2 | Shell variants | Android termux / Linux one-liners |
-| lan | LAN discoverer | probe CIDR, detects 22/80/135/139/443/445/3389 |
+| lan | LAN discoverer | probe CIDR 22/80/135/139/443/445/3389 |
+| arp | ARP scan | raw socket ARP sweep (root, Linux) |
+| wifi | Wifi audit | scaninfo + connectioninfo via termux-api |
+| persist | Persistence | boot script + shell hook (opt-in) |
 | ops | Device ops | battery, sms, camera, mic, location, vibrate, clipboard |
 | serve | HTTP server | static file server on port 8080 |
 | spray | Credential spray | wordlist brute-force web login forms |
@@ -74,7 +79,7 @@ exit              stop listener
 ```
 **Obfuscation**: set `obfuscate: true` in `config.json`, then build payload with `y`. Client and server XOR stream match.
 
-## Plugin system
+## Plugins
 Drop `.py` into `modules/`:
 ```python
 def mod_mymod():

