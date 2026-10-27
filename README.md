@@ -7,9 +7,10 @@ Jalan di device apa saja yang ada Python 3: **Termux (android)**, Linux (Debian/
 macOS. Wrapper `bin/hkall` + `bin/hkall-deps` auto-detect package manager. Bukan Termux khusus.
 
 ## Target online / device lain
-`docs/USAGE.md` — semua modul (TUI + per-module CLI).
+`docs/MANUAL.md` — tata cara rinci semua fitur (tiap modul: prompt, contoh CLI, output).
+`docs/USAGE.md` — alur umum.
 `docs/ONLINE.md` — alur menarget device lain secara online: same-LAN, reverse-shell (bypass NAT),
-port-forwarding (Jalur 3), VPS relay. Module yang jalan direct vs butuh reverse.
+port-forwarding (Jalur 3), VPS relay.
 
 ## Install
 ```bash
