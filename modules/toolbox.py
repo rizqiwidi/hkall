@@ -28,6 +28,18 @@ def _yn(prompt):
 def _have(binname):
     return shutil.which(binname) is not None
 
+def _pkg_available(pkg):
+    """Cek paket ada di repo sebelum nawarkan install."""
+    try:
+        r = subprocess.run(["apt-cache", "policy", pkg], capture_output=True, text=True, timeout=10)
+        for line in r.stdout.splitlines():
+            if line.strip().startswith("Candidate:"):
+                cand = line.split(":", 1)[1].strip()
+                return cand and cand != "(none)"
+    except Exception:
+        pass
+    return False
+
 def _install(tool):
     """Offer + run install. Returns True if tool becomes available."""
     name = tool.get("bin")
@@ -37,7 +49,9 @@ def _install(tool):
         print(f"{name}: not packaged for Termux — skipped"); return False
     print(f"\n{name} is NOT installed.")
     if pkg:
-        if _yn(f"Install via pkg install {pkg}? (needs network, ~y/N) "):
+        if not _pkg_available(pkg):
+            print(f"pkg '{pkg}' not found in repo — skipping pkg install")
+        elif _yn(f"Install via pkg install {pkg}? (needs network, ~y/N) "):
             print(f"$ pkg install {pkg}")
             subprocess.run(["pkg", "install", "-y", pkg])
             return _have(name)

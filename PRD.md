@@ -6,7 +6,7 @@
 - **Name:** hkall
 - **Platform:** Android/Termux (Python 3), portable to Linux
 - **Type:** modular offensive toolkit (recon, shells, C2, post-exploit, payload, net, device ops)
-- **Version:** 0.4.0 (current)
+- **Version:** 0.4.1 (current)
 - **Repo:** https://github.com/rizqiwidi/hkall
 
 ## 2. Requirements
@@ -57,6 +57,13 @@
 | toolbox | External tools launcher (plugin) | category/tool | run sqlmap/nmap/hydra/ffuf/bettercap/dnschef/tcpdump via `tools.json` |
 
 ## 5. Development tracker
+
+### v0.4.1 (2026-10-27) — toolbox catalog expansion
+- [x] tools.json 8 → 18 tools: +hping3, dnsmasq, dsniff, ab, siege, wrk, mitmproxy, goldeneye, macchanger
+- [x] kategori baru: `load` (ab/siege/wrk/goldeneye)
+- [x] toolbox `_install`: apt-cache policy check sebelum nawarkan install (no phantom packages)
+- [x] verified: all 5 categories render, per-tool MISSING/ok detect correct (tshark, mitmdump = terpasang)
+- [x] docs: README toolbox section (per-category table), USAGE tool table + unavailable list
 
 ### v0.4.0 (2026-10-27) — web sec modules + external toolbox
 - [x] `modules/websec.py` plugin: sqli, xss, csrf, idor, mitm, dnsspoof, ddos, websec (orchestrator)

@@ -82,7 +82,27 @@ python hkall.py -m toolbox         # external tools launcher (sqlmap/nmap/ffuf/.
 | dnsspoof | DNS spoof lab | fake DNS server for lab domain (root) |
 | ddos | Load test | bounded concurrency/duration, req/s + byte stats |
 | websec | Orchestrator | menu: chain sqli→xss→csrf→idor against one target |
-| toolbox | External tools | launcher for sqlmap/nmap/hydra/ffuf/bettercap/dnschef/tcpdump |
+| toolbox | External tools | launcher for sqlmap/nmap/hydra/ffuf/bettercap/dnschef/tcpdump/mitmproxy/hping3/dnsmasq/dsniff/ab/siege/wrk/goldeneye/macchanger/tshark |
+
+### Toolbox (external tools)
+
+`python hkall.py -m toolbox` — menu kategori → pilih tool → binary belum ada? toolbox tawarkan
+`pkg install` (konfirmasi dulu, tidak auto) → wrapper interaktif arg → jalan.
+Katalog: `tools.json` (18 tool).
+
+Sudah terpasang di device ini: `tshark`, `mitmdump` (mitmproxy). Sisanya ditawarkan install saat dipilih.
+Kalau nggak mau install: semua modul internal (sqli, xss, csrf, idor, mitm, dnsspoof, ddos) jalan tanpa dependency.
+
+| kategori | tools |
+|----------|-------|
+| web | sqlmap, ffuf, mitmproxy |
+| net | bettercap, dnschef, tcpdump, tshark, hping3, dnsmasq, dsniff, macchanger |
+| recon | nmap |
+| auth | hydra |
+| load | ab, siege, wrk, goldeneye |
+
+Tidak tersedia di Termux (ditandai `unavailable`): ettercap. Perlu source/pip: dalfox, xsstrike, feroxbuster.
+GUI/cloud (tidak cocok Termux CLI): Burp Suite, XSSHunter, evilginx. Windows-only: responder.
 
 ## C2 usage
 ```bash

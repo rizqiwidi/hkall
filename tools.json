@@ -110,12 +110,124 @@
       "cat": "net",
       "desc": "MITM alternative (text UI) — not in termux repo, skip unless source-built",
       "unavailable": true
+    },
+    "hping3": {
+      "bin": "hping3",
+      "pkg": "hping3",
+      "cat": "net",
+      "desc": "packet crafting/flood — TCP/UDP/ICMP test (lab only)",
+      "args": [
+        {"flag": "target", "prompt": "target ip (device own)", "required": true},
+        {"flag": "-p", "prompt": "dest port [80]", "default": "80"},
+        {"flag": "-c", "prompt": "packet count [100]", "default": "100"},
+        {"flag": "-i", "prompt": "interval (u10000=10ms) [u10000]", "default": "u10000"},
+        {"flag": "--syn", "prompt": "SYN mode? [y/N]", "bool": true}
+      ],
+      "needs_root": true,
+      "notes": "Lab load/packet test only. Default bounded (-c 100)."
+    },
+    "dnsmasq": {
+      "bin": "dnsmasq",
+      "pkg": "dnsmasq",
+      "cat": "net",
+      "desc": "fake DNS via hosts entries — simplest lab DNS spoof",
+      "args": [
+        {"flag": "--no-daemon", "const": true},
+        {"flag": "--address", "prompt": "fake entry (/test.lab/127.0.0.1)", "required": true},
+        {"flag": "-p", "prompt": "listen port [5353]", "default": "5353"}
+      ],
+      "notes": "Non-root alt to port 53: use -p 5353. Point device DNS to this host."
+    },
+    "dsniff": {
+      "bin": "arpspoof",
+      "pkg": "dsniff",
+      "cat": "net",
+      "desc": "classic MITM suite: arpspoof, dnsspoof, dsniff, macof",
+      "args": [
+        {"flag": "-i", "prompt": "interface [wlan0]", "default": "wlan0"},
+        {"flag": "-t", "prompt": "victim ip (device own)", "required": true},
+        {"flag": "gateway", "prompt": "gateway ip [192.168.1.1]", "default": "192.168.1.1"}
+      ],
+      "needs_root": true,
+      "notes": "arpspoof is the binary; suite also has dnsspoof/dsniff/macof."
+    },
+    "ab": {
+      "bin": "ab",
+      "pkg": "apache2-utils",
+      "cat": "load",
+      "desc": "ApacheBench — standard HTTP load test (no DoS)",
+      "args": [
+        {"flag": "-n", "prompt": "total requests [1000]", "default": "1000"},
+        {"flag": "-c", "prompt": "concurrency [50]", "default": "50"},
+        {"flag": "url", "prompt": "target url (device own)", "required": true}
+      ]
+    },
+    "siege": {
+      "bin": "siege",
+      "pkg": "siege",
+      "cat": "load",
+      "desc": "load test with URL file mode + delays",
+      "args": [
+        {"flag": "-c", "prompt": "concurrent users [25]", "default": "25"},
+        {"flag": "-t", "prompt": "duration [30S]", "default": "30S"},
+        {"flag": "url", "prompt": "target url (device own)", "required": true}
+      ]
+    },
+    "wrk": {
+      "bin": "wrk",
+      "pkg": "wrk",
+      "cat": "load",
+      "desc": "modern HTTP benchmark (LuaJIT scripts)",
+      "args": [
+        {"flag": "-t", "prompt": "threads [4]", "default": "4"},
+        {"flag": "-c", "prompt": "connections [50]", "default": "50"},
+        {"flag": "-d", "prompt": "duration [30s]", "default": "30s"},
+        {"flag": "url", "prompt": "target url (device own)", "required": true}
+      ]
+    },
+    "mitmproxy": {
+      "bin": "mitmdump",
+      "pkg": "mitmproxy",
+      "cat": "web",
+      "desc": "HTTPS MITM proxy — install CA on own device, inspect TLS traffic",
+      "args": [
+        {"flag": "-p", "prompt": "listen port [8080]", "default": "8080"},
+        {"flag": "-w", "prompt": "save flows to (optional, e.g. data/flows.mitm)"},
+        {"flag": "--mode", "prompt": "mode [regular/transparent/upstream:]", "default": "regular"}
+      ],
+      "notes": "Install CA on own device: visit http://mitm.it after starting. Transparent mode needs root."
+    },
+    "goldeneye": {
+      "bin": "goldeneye",
+      "pkg": "goldeneye",
+      "cat": "load",
+      "desc": "HTTP DoS (layer 7) — lab-only, bounded run",
+      "args": [
+        {"flag": "url", "prompt": "target url (device own)", "required": true},
+        {"flag": "-w", "prompt": "workers [10]", "default": "10"},
+        {"flag": "-s", "prompt": "sockets [100]", "default": "100"}
+      ],
+      "needs_root": false,
+      "notes": "Lab-only. Prefer ab/wrk for legitimate load testing."
+    },
+    "macchanger": {
+      "bin": "macchanger",
+      "pkg": "macchanger",
+      "cat": "net",
+      "desc": "MAC address spoof — test MAC filtering on own network",
+      "args": [
+        {"flag": "-r", "prompt": "random MAC? [y/N]", "bool": true},
+        {"flag": "-m", "prompt": "or set specific MAC (aa:bb:cc:dd:ee:ff)"},
+        {"flag": "iface", "prompt": "interface [wlan0]", "default": "wlan0"}
+      ],
+      "needs_root": true
     }
   },
   "categories": {
-    "web": "Web vuln (sqli/xss/fuzz)",
-    "net": "Network (MITM/DNS/capture)",
+    "web": "Web vuln (sqli/xss/fuzz/mitm-proxy)",
+    "net": "Network (MITM/DNS/capture/spoof)",
     "recon": "Recon (nmap)",
-    "auth": "Auth brute (hydra)"
+    "auth": "Auth brute (hydra)",
+    "load": "Load test (ab/siege/wrk/goldeneye)"
   }
 }

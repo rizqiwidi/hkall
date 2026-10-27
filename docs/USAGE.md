@@ -82,25 +82,35 @@ Untuk lebih realistis (local only): `ab -n 1000 -c 50 http://127.0.0.1:8090/load
 
 ## 5. External tools (`toolbox`)
 
-`python hkall.py -m toolbox` → menu kategori (web / net / recon / auth) → pilih tool → kalau binary
-belum ada, toolbox tawarkan `pkg install` (butuh konfirmasi kamu) → wrapper interaktif → jalan.
+`python hkall.py -m toolbox` → menu kategori (web / net / recon / auth / load) → pilih tool → kalau binary
+belum ada, toolbox tawarkan `pkg install` (cek dulu ketersediaan repo, butuh konfirmasi kamu) → wrapper
+interaktif → jalan.
 
-Katalog: `tools.json`. Tool yang didukung:
+Katalog: `tools.json` (18 tool). Tool yang didukung:
 
-| tool | pkg | kategori | butuh root |
-|------|-----|----------|-----------|
-| sqlmap | sqlmap | web | tidak |
-| ffuf | ffuf | web | tidak |
-| nmap | nmap | recon | tidak |
-| hydra | hydra | auth | tidak |
-| bettercap | bettercap | net | ya |
-| dnschef | pip | net | ya |
-| tcpdump | tcpdump | net | ya |
-| tshark | (sudah ada) | net | ya |
+| tool | pkg | kategori | butuh root | status device ini |
+|------|-----|----------|-----------|-------------------|
+| sqlmap | sqlmap | web | tidak | MISSING |
+| ffuf | ffuf | web | tidak | MISSING |
+| mitmproxy | mitmproxy | web | transparent mode | **terpasang** (`mitmdump`) |
+| bettercap | bettercap | net | ya | MISSING |
+| dnschef | pip | net | ya | MISSING |
+| tcpdump | tcpdump | net | ya | MISSING |
+| tshark | (sudah ada) | net | ya | **terpasang** |
+| hping3 | hping3 | net | ya | MISSING |
+| dnsmasq | dnsmasq | net | tidak (pakai -p 5353) | MISSING |
+| dsniff | dsniff | net | ya | MISSING |
+| macchanger | macchanger | net | ya | MISSING |
+| nmap | nmap | recon | tidak | MISSING |
+| hydra | hydra | auth | tidak | MISSING |
+| ab | apache2-utils | load | tidak | MISSING |
+| siege | siege | load | tidak | MISSING |
+| wrk | wrk | load | tidak | MISSING |
+| goldeneye | goldeneye | load | tidak | MISSING |
+| ettercap | — | net | ya | unavailable (bukan di repo Termux) |
 
-Status device saat ini: hanya `tshark` terpasang. Sisanya toolbox akan tawarkan install saat
-kamu pilih (tidak auto-install tanpa konfirmasi). Kalau nggak mau install: pakai modul internal
-(sqli, xss, csrf, idor, mitm, dnsspoof, ddos) — sudah lengkap dan jalan tanpa dependency.
+Tidak di repo Termux, butuh source/pip: `dalfox`, `xsstrike`, `feroxbuster` (XSS/IDOR fuzz).
+GUI/cloud, tidak cocok Termux CLI: `Burp Suite`, `XSSHunter`, `evilginx`. Windows-only: `responder`.
 
 ---
 
