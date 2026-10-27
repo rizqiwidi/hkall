@@ -47,8 +47,83 @@ def show(kind=None, limit=30):
 
 # ---------------- terminal ----------------
 def c(s, code): return f"\033[{code}m{s}\033[0m" if sys.stdout.isatty() else s
-def banner(): print(c("hkall v%s — modular offensive toolkit" % VERSION, "36"))
+def banner(): print(c("hkall v%s — modular offensive toolkit" % VERSION, "36") + c("   (m <key> jalankan langsung, /cari  filter, i N info, r ulang terakhir)", "2"))
 def section(t): print(c(f"\n== {t} ==", "34"))
+
+# module -> logical category via name keywords. used by TUI grouping + color.
+def _mod_cat(k):
+    name = MODULES.get(k, ("",))[0].lower()
+    if any(x in name for x in ("scan", "enum", "lookup", "discover", "subdomain", "spray")): return ("recon", "36")
+    if any(x in name for x in ("reverse", "c2", "payload", "shell", "keylog", "exfil", "persist")): return ("shells", "35")
+    if any(x in name for x in ("mitm", "netcut", "deauth", "sniff", "eviltwin", "dnsspoof", "ddos", "arp", "wifi", "serve", "ops")): return ("net", "31")
+    if any(x in name for x in ("sqli", "xss", "csrf", "idor", "toolbox")): return ("web", "32")
+    return ("misc", "37")
+
+_MOD_ALIAS = {"ls": "lan", "list": "lan", "spray": "spray", "pay": "payload",
+              "sh": "shell", "c2": "c2", "kg": "keylog", "ex": "exfil",
+              "rx": "recv", "x": "xss", "sql": "sqli", "arp": "arp"}
+
+def main_tui():
+    banner()
+    filt = ""
+    last_mod = None
+    while True:
+        ids = [k for k in MODULES if not filt or filt in k.lower() or filt in MODULES[k][0].lower()]
+        if filt:
+            for i, k in enumerate(ids):
+                print(f"  [{i+1}] {k:12} {MODULES[k][0]}")
+        else:
+            # group by category
+            groups = {}
+            for k in ids:
+                cat, code = _mod_cat(k)
+                groups.setdefault(cat, []).append((k, code))
+            for cat, items in groups.items():
+                print(c(f"  [{cat}]", {"recon":"36","shells":"35","net":"31","web":"32","misc":"37"}[cat]))
+                for k, code in items:
+                    tag = c(" [p]", "33") if k in _PLUGIN_KEYS else ""
+                    print(f"     {k:11} {MODULES[k][0]}{tag}")
+        if not ids: print("  (no match)")
+        print("  [0] exit   /query   m <key>   i N   r")
+        sel = _readline("hkall> ")
+        if sel is None: break
+        if not sel: continue
+        low = sel.lower()
+        if low in ("0", "q", "exit", "quit"): break
+        if low in ("r",) and last_mod:
+            print(c(f"  -> {MODULES[last_mod][0]}", "2")); last_mod = _run(last_mod); continue
+        if low.startswith("/"): filt = low[1:].strip(); continue
+        if low.startswith("m "):
+            key = low[2:].strip()
+            key = _MOD_ALIAS.get(key, key)
+            if key in MODULES:
+                print(c(f"  -> {MODULES[key][0]}", "2")); last_mod = _run(key); continue
+            print(f"unknown module '{key}'"); continue
+        if low.startswith("i ") or low.startswith("? "):
+            try:
+                q = low.split(None, 1)[1]
+                k = q if q in MODULES else ids[int(q)-1] if q.isdigit() else None
+                if k in MODULES: print(module_help(k))
+                else: print("unknown")
+            except (ValueError, IndexError): print("usage: i N | i key")
+            continue
+        try:
+            idx = int(sel) - 1
+            if 0 <= idx < len(ids):
+                key = ids[idx]
+                print(c(f"  -> {MODULES[key][0]}", "2")); last_mod = _run(key)
+            else: print("unknown")
+        except ValueError:
+            print("unknown")
+
+def _run(key):
+    try:
+        MODULES[key][1]()
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"error: {e}")
+    return key
 
 # ---------------- recon ----------------
 def parse_ranges(s):
@@ -694,39 +769,14 @@ def ask(prompt, default=""):
     except (EOFError, KeyboardInterrupt):
         return default
 
-def main_tui():
-    banner()
-    filt = ""
-    while True:
-        section("MODULES" + (f"  /{filt}" if filt else ""))
-        ids = [k for k in MODULES if not filt or filt in k.lower() or filt in MODULES[k][0].lower()]
-        for i, k in enumerate(ids):
-            name, _, _ = MODULES[k]
-            tag = c(" [plugin]", "33") if k in _PLUGIN_KEYS else ""
-            print(f"  [{i+1}] {name}{tag}")
-        if not ids: print("  (no match)")
-        print("  [0] exit | /query filter | i N info | cli: hkall.py -m MODULE ...")
-        try: sel = ask("hkall> ").strip()
-        except (KeyboardInterrupt, EOFError): print(); break
-        if not sel: continue
-        if sel in ("0", "q", "exit"): break
-        if sel.startswith("/"):
-            filt = sel[1:].strip().lower(); continue
-        if sel.startswith("i ") or sel.startswith("? "):
-            try:
-                idx = int(sel.split(None, 1)[1]) - 1
-                if 0 <= idx < len(ids): print(module_help(ids[idx]))
-                else: print("unknown")
-            except (ValueError, IndexError): print("usage: i N")
-            continue
-        try:
-            idx = int(sel) - 1
-            if 0 <= idx < len(ids):
-                try: MODULES[ids[idx]][1]()
-                except KeyboardInterrupt: pass
-            else: print("unknown")
-        except ValueError:
-            print("unknown")
+def _readline(prompt):
+    """TUI raw read: raises SystemExit on real EOF so menu exits cleanly."""
+    try:
+        return input(prompt).strip()
+    except EOFError:
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        print(); return None
 
 # ---------------- per-module CLI arg schema ----------------
 # flag -> (help, dest). Used for `hkall -m MODULE --help` and CLI presets.
@@ -758,8 +808,8 @@ MODARGS = {
     "idor":    {"--host": "api url (/user/{{id}})", "--range": "id range hi (1-N)", "--auth": "Authorization header"},
     "mitm":    {"--host": "victim ip", "--gateway": "gateway ip", "--iface": "interface", "--seconds": "spoof seconds"},
     "netcut":  {"--host": "target ip (cut)", "--gateway": "gateway ip", "--iface": "interface", "--seconds": "cut seconds"},
-    "deauth":  {"--host": "AP bssid", "--iface": "interface [wlan0]", "--client": "client mac (target; blank=all)", "--seconds": "deauth count"},
-    "sniff":   {"--iface": "interface [wlan0]", "--seconds": "capture seconds", "--client": "mode: c=creds p=probe"},
+    "deauth":  {"--host": "AP bssid", "--client": "client mac (target; blank=all)", "--iface": "interface [wlan0]", "--seconds": "deauth count"},
+    "sniff":   {"--iface": "interface [wlan0]", "--seconds": "capture seconds", "--mode": "c=creds (HTTP) p=probe (WiFi nearby)"},
     "eviltwin": {"--host": "ssid to clone", "--iface": "interface (monitor)", "--gateway": "gateway ip [10.0.0.1]", "--seconds": "channel"},
     "dnsspoof":{"--port": "listen port", "--domain": "domain to answer", "--ip": "answer ip"},
     "ddos":    {"--host": "target url", "--conns": "concurrency", "--duration": "seconds"},
