@@ -128,11 +128,15 @@ def _build_cmd(tool, binpath):
         d = a.get("default", "")
         v = _ask(prompt + (" [%s]" % d if d else "") + ":", d)
         if v:
-            if flag == "target" or flag == "service" or flag == "filter" or flag == "iface":
+            # positional/short/flag dispatch
+            if flag in ("target", "service", "filter", "iface", "url", "gateway"):
+                # positional argument (no flag prefix needed)
                 argv.append(v)
-            elif flag.startswith("-"):
+            elif flag.startswith("--") or (len(flag) == 2 and flag[0] == "-"):
+                # long --flag or short -X: need --flag value or -X value
                 argv.extend([flag, v])
             else:
+                # bare non-flag arg (positional, no dash)
                 argv.append(v)
     return argv
 

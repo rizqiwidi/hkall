@@ -8,7 +8,7 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.6.1"
+VERSION = "0.6.2"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")
@@ -301,15 +301,19 @@ def mod_c2():
             except OSError:
                 print(f"session {current} dead"); SESSIONS.pop(current, None); current = None; continue
             time.sleep(0.4)
-            c2.settimeout(2)
+            c2.settimeout(3)
             buf = b""
             try:
                 while True:
-                    d = c2.recv(4096)
+                    d = c2.recv(8192)
                     if not d: raise OSError("closed")
                     buf += d
-                    if len(d) < 4096: break
-            except socket.timeout: pass
+                    # recv until: (a) EAGAIN/EWOULDBLOCK returns empty (b) partial but timeout (c) session closed
+                    # heuristic: keep reading until timeout (session done sending)
+                    # the timeout guard below catches slow/big output gracefully
+            except socket.timeout:
+                # timeout means session has finished sending; process what we have
+                pass
             except OSError:
                 SESSIONS.pop(current, None); print(f"session {current} closed"); current = None; continue
             c2.settimeout(None)
@@ -720,8 +724,12 @@ def mod_subd():
         except OSError:
             pass
     ts = [threading.Thread(target=chk, args=(x,)) for x in subs]
-    for t in ts: t.start()
-    for t in ts: t.join()
+    # batch 64 threads at a time — avoid spawning hundreds on Termux
+    pos = 0
+    while pos < len(ts):
+        for t in ts[pos:pos+64]: t.start()
+        for t in ts[pos:pos+64]: t.join()
+        pos += 64
     for sub, ip in found: print(f"  {sub}.{domain} -> {ip}")
     print(f"found ({len(found)}/{len(subs)}): {[s for s,_ in found] or 'none'}")
     if found: save("subd", domain, f"found={found}")

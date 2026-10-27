@@ -17,10 +17,10 @@
 | F5 | **MEDIUM** | keylog | `int(dur)` ValueError kalau user input non-numeric | ✅ FIXED |
 | F6 | **MEDIUM** | mitm/netcut | MAC read dari /proc/net/arp (format colon) → `bytes.fromhex` error | ✅ FIXED (netcut plus mitm) |
 | F7 | **MEDIUM** | websec menu | `url` prompt di auto-chain diabaikan — tiap modul minta URL lagi | ✅ FIXED |
-| F8 | **LOW** | c2 | read timeout 2s potong output besar/lambat | ⏳ Open (minor) |
+| F8 | **LOW** | c2 | read timeout 2s potong output besar/lambat | ✅ FIXED — recv hingga timeout, buffer 8K |
 | F9 | **INFO** | serve | `int(get_port(...))` OK, bukan bug | — |
-| F10 | **LOW** | dnsspoof | socket UDP tidak ditutup explicit (daemon thread) | ⏳ Open (acceptable) |
-| F11 | **INFO** | install.sh | `bin/hkall` tidak ter-pack, shell completion zsh path hardcode | ⏳ Open |
+| F10 | **LOW** | dnsspoof | socket UDP tidak ditutup explicit (daemon thread) | ✅ FIXED — socket close di serve(), bind-error surfaced EACCES/EADDRINUSE |
+| F11 | **INFO** | install.sh | `bin/hkall` tidak ter-pack, shell completion zsh hardcode | ✅ FIXED — symlink langsung ke hkall.py, completion kondisional |
 
 ---
 
