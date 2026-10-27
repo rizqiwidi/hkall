@@ -6,7 +6,7 @@
 - **Name:** hkall
 - **Platform:** Android/Termux (Python 3), portable to Linux
 - **Type:** modular offensive toolkit (recon, shells, C2, post-exploit, payload, net, device ops)
-- **Version:** 0.5.1 (current)
+- **Version:** 0.6.0 (current)
 - **Repo:** https://github.com/rizqiwidi/hkall
 
 ## 2. Requirements
@@ -57,6 +57,16 @@
 | toolbox | External tools launcher (plugin) | category/tool | run sqlmap/nmap/hydra/ffuf/bettercap/dnschef/tcpdump via `tools.json` |
 
 ## 5. Development tracker
+
+### v0.6.0 (2026-10-27) — LAN attack module stack + aircrack-ng toolbox
+- [x] `mod_deauth` — 802.11 deauth (aireplay-ng prefer or raw AF_PACKET fallback), monitor iface needed
+- [x] `mod_sniff` — AF_PACKET passive capture: mode c=HTTP plaintext creds (regex password/user/login), mode p=802.11 probe SSID
+- [x] `mod_eviltwin` — hostapd+dnsmasq clone AP, DHCP+wildcard DNS redirect, HTML landing page, ctrl-c cleanup
+- [x] `aircrack-ng` added to tools.json (aireplay-ng deauth, airmon-ng monitor mode) + toolbox
+- [x] websec registry + menu (2→d/e/f), MODARGS schema, USAGE docs, MANUAL §5.6c/d/e
+- [x] fix deauth: shutil.which not `command -v`, restore ap_mac prompt order
+- [ ] SSL/TLS stripping (bettercap session hijack) — backlog
+- [ ] LLMNR/NBNS responder (responder in toolbox, native module?) — backlog
 
 ### v0.5.1 (2026-10-27) — netcut module (cut internet target on LAN)
 - [x] `mod_netcut` di websec.py — ARP poison gw→dummy MAC (00:00:00:00:00:00), target kehilangan akses keluar sementara

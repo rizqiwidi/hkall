@@ -269,6 +269,20 @@
         {"flag": "-w", "prompt": "disable wpad? [n]", "default": "n"}
       ]
     },
+    "aircrack-ng": {
+      "bin": "airmon-ng",
+      "pkg": "aircrack-ng",
+      "cat": "net",
+      "desc": "WiFi toolkit: monitor mode + deauth (aireplay-ng -0), packet capture (airodump-ng)",
+      "args": [
+        {"flag": "iface", "prompt": "interface [wlan0]", "default": "wlan0"},
+        {"flag": "-0", "prompt": "deauth count [10]", "default": "10"},
+        {"flag": "-a", "prompt": "AP bssid (untuk deauth client / aireplay)", "required": true},
+        {"flag": "-c", "prompt": "client mac (deauth target; blank=all)"}
+      ],
+      "needs_root": true,
+      "notes": "monitor mode dulu: airmon-ng start wlan0 (atau ip link set wlan0 down && iw dev wlan0 set type monitor)"
+    },
     "mhddos": {
       "bin": null,
       "pkg": null,

@@ -81,6 +81,9 @@ Semua uji **device sendiri** (pakai `lab/lab_server.py`).
 | idor | IDOR enumeration | `hkall -m idor --host "http://127.0.0.1:8090/user/{{id}}" --range 20 --auth "Bearer x"` |
 | mitm | ARP MITM lab (root) | `hkall -m mitm --host 192.168.1.50 --gateway 192.168.1.1 --iface wlan0` |
 | netcut | Cut internet target (root, netcut-like) | `hkall -m netcut --host 192.168.1.50 --gateway 192.168.1.1 --iface wlan0 --seconds 10` |
+| deauth | Deauth/kick WiFi (root, monitor) | `hkall -m deauth --host AA:BB:CC:DD:EE:FF --iface wlan0 --client FF:FF:FF:FF:FF:FF` |
+| sniff | Sniff HTTP creds + probe nearby (root) | `hkall -m sniff --iface wlan0 --seconds 10 --client c` |
+| eviltwin | Evil twin AP clone (root, hostapd+dnsmasq) | `hkall -m eviltwin --host MyWiFi --iface wlan0` |
 | dnsspoof | DNS spoof lab (root) | `hkall -m dnsspoof --domain test.lab --ip 127.0.0.1` |
 | ddos | load test (bounded) | `hkall -m ddos --host http://127.0.0.1:8090/load` |
 | websec | orchestrator menu (chain) | `hkall -m websec` |
@@ -235,7 +238,7 @@ keylog/ops/wifi pakai device sendiri; mitm/dnsspoof butuh root dan menyasar devi
 | shells | shell, c2, payload, exe2, keylog |
 | exfil | exfil, recv |
 | web vuln | sqli, xss, csrf, idor, spray, ffuf(toolbox), sqlmap(toolbox) |
-| network attack | mitm, netcut, dnsspoof, bettercap, dnschef, dnsmasq, dsniff, hping3 |
+| network attack | mitm, netcut, deauth, sniff, eviltwin, dnsspoof, bettercap, dnschef, dnsmasq, dsniff, hping3 |
 | load test | ddos, ab, siege, wrk, goldeneye |
 | misc | wifi, persist, ops, serve, cfg, history, websec, toolbox |
 

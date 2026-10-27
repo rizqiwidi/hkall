@@ -8,7 +8,7 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.5.1"
+VERSION = "0.6.0"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")
@@ -758,6 +758,9 @@ MODARGS = {
     "idor":    {"--host": "api url (/user/{{id}})", "--range": "id range hi (1-N)", "--auth": "Authorization header"},
     "mitm":    {"--host": "victim ip", "--gateway": "gateway ip", "--iface": "interface", "--seconds": "spoof seconds"},
     "netcut":  {"--host": "target ip (cut)", "--gateway": "gateway ip", "--iface": "interface", "--seconds": "cut seconds"},
+    "deauth":  {"--host": "AP bssid", "--iface": "interface [wlan0]", "--client": "client mac (target; blank=all)", "--seconds": "deauth count"},
+    "sniff":   {"--iface": "interface [wlan0]", "--seconds": "capture seconds", "--client": "mode: c=creds p=probe"},
+    "eviltwin": {"--host": "ssid to clone", "--iface": "interface (monitor)", "--gateway": "gateway ip [10.0.0.1]", "--seconds": "channel"},
     "dnsspoof":{"--port": "listen port", "--domain": "domain to answer", "--ip": "answer ip"},
     "ddos":    {"--host": "target url", "--conns": "concurrency", "--duration": "seconds"},
     "websec":  {},

