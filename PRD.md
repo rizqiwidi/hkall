@@ -6,7 +6,7 @@
 - **Name:** hkall
 - **Platform:** Android/Termux (Python 3), portable to Linux
 - **Type:** modular offensive toolkit (recon, shells, C2, post-exploit, payload, net, device ops)
-- **Version:** 0.5.0 (current)
+- **Version:** 0.5.1 (current)
 - **Repo:** https://github.com/rizqiwidi/hkall
 
 ## 2. Requirements
@@ -57,6 +57,14 @@
 | toolbox | External tools launcher (plugin) | category/tool | run sqlmap/nmap/hydra/ffuf/bettercap/dnschef/tcpdump via `tools.json` |
 
 ## 5. Development tracker
+
+### v0.5.1 (2026-10-27) — netcut module (cut internet target on LAN)
+- [x] `mod_netcut` di websec.py — ARP poison gw→dummy MAC (00:00:00:00:00:00), target kehilangan akses keluar sementara
+- [x] auto-restore, cap 120s, guard target==gateway, verify target MAC dari /proc/net/arp
+- [x] registry + websec menu (network->c netcut) + MODARGS schema (--host/--gateway/--iface/--seconds)
+- [x] clean dead expr di dnsspoof (`qfull[12:] if False else qfull` → `qfull`)
+- [x] docs: USAGE §B row + §F structure, MANUAL §5.6b + §9
+- [ ] encrypted C2 (TLS) — backlog
 
 ### v0.5.0 (2026-10-27) — multi-platform + full tool catalog (24 tools)
 - [x] `tools.json` → **24 tool**: +dalfox, xsstrike, feroxbuster, responder, mhddos (guide), loic (guide)

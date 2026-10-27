@@ -210,6 +210,14 @@ hkall -m dnsspoof --domain test.lab --ip 192.168.1.10
 ```
 Fake DNS server (UDP :53) jawab `test.lab -> ip`. Stop ctrl-c.
 
+### 5.6b netcut — Cut internet target (root, netcut-like)
+**Prompt:** target ip, gateway, interface, cut seconds.
+```bash
+hkall -m netcut --host 192.168.1.50 --gateway 192.168.1.1 --iface wlan0 --seconds 10
+```
+ARP poison: target percaya gateway ada di MAC tidak-terpasang (`00:00:00:00:00:00`) → traffic target→gateway
+blackhole → internet target mati sementara. Auto-restore on exit/ctrl-c (cap 120s). Butuh root.
+
 ### 5.7 ddos — Load test (bounded)
 **Prompt:** url, concurrency (cap 200), duration (cap 60), method.
 ```bash
@@ -283,4 +291,4 @@ Full alur: `docs/ONLINE.md`. Ringkasan:
 - **Same LAN**: `--host 192.168.1.x` — direct
 - **Reverse shell (NAT)**: target jalanin payload → connect balik ke attacker; VPS relay kalau perlu
 - **Port-forward**: router forward → scan IP publik
-- Yang local-only: keylog/persist/ops/wifi/mitm/dnsspoof (butuh akses di tempat tool dijalankan)
+- Yang local-only: keylog/persist/ops/wifi/mitm/netcut/dnsspoof (butuh akses di tempat tool dijalankan)

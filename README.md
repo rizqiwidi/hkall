@@ -116,6 +116,7 @@ python hkall.py -m toolbox         # external tools launcher (sqlmap/nmap/ffuf/.
 | csrf | CSRF check | SameSite cookie + token presence verdict |
 | idor | IDOR enum | object ID sweep, authz check per ID |
 | mitm | ARP MITM lab | ARP spoof between two own hosts, auto-restore (root) |
+| netcut | Cut internet target | ARP poison gw→dummy, target offline sementara, auto-restore (root) |
 | dnsspoof | DNS spoof lab | fake DNS server for lab domain (root) |
 | ddos | Load test | bounded concurrency/duration, req/s + byte stats |
 | websec | Orchestrator | menu: chain sqli→xss→csrf→idor against one target |
