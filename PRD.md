@@ -6,7 +6,7 @@
 - **Name:** hkall
 - **Platform:** Android/Termux (Python 3), portable to Linux
 - **Type:** modular offensive toolkit (recon, shells, C2, post-exploit, payload, net, device ops)
-- **Version:** 0.4.1 (current)
+- **Version:** 0.4.2 (current)
 - **Repo:** https://github.com/rizqiwidi/hkall
 
 ## 2. Requirements
@@ -57,6 +57,16 @@
 | toolbox | External tools launcher (plugin) | category/tool | run sqlmap/nmap/hydra/ffuf/bettercap/dnschef/tcpdump via `tools.json` |
 
 ## 5. Development tracker
+
+### v0.4.2 (2026-10-27) — global CLI framework + TUI search/info + completion
+- [x] `bin/hkall` global launcher (shebang, symlink-aware), install.sh → PATH (`$PREFIX/bin` / `~/bin`)
+- [x] `MODARGS` per-module CLI arg schema + `hkall -m MODULE --help` (dynamic two-phase argparse)
+- [x] TUI: `/query` filter + `i N` module info; `HKALL_NOPLUGIN` silence plugin noise (fast completion)
+- [x] bash + zsh completion scripts (`bin/hkall-completion.*`)
+- [x] plugin `_ask` (websec/toolbox) baca `GINJ` CLI presets → `-m sqli --host ... --range 5 --auth ...` one-shot penuh
+- [x] fixes: cli_one GINJ double-host bug (generic --host + MODARGS --host dobel), phase-1 parse_known_args for module flags
+- [x] docs: README global command + completion + TUI nav, USAGE §0
+- [ ] encrypted C2 (TLS) — backlog
 
 ### v0.4.1 (2026-10-27) — toolbox catalog expansion
 - [x] tools.json 8 → 18 tools: +hping3, dnsmasq, dsniff, ab, siege, wrk, mitmproxy, goldeneye, macchanger

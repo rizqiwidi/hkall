@@ -1,10 +1,27 @@
 # hkall — Usage & Alur (Menu → Input → Auto)
 
 Semua modul di sini: **uji device/network milik sendiri saja.** Belajar, bukan target pihak ketiga.
-Alur umum (TUI): `python hkall.py` → menu numbered → pilih nomor modul → jawab prompt → hasil otomatis
+Alur umum (TUI): `hkall` → menu numbered → pilih nomor modul → jawab prompt → hasil otomatis
 tersimpan ke `data/rs.db` (bisa ditarik lewat modul `history`).
 
-Alur CLI one-shot: `python hkall.py -m MODULE [--host --port --ports]` (prompt dilewati preset).
+Alur CLI one-shot: `hkall -m MODULE [--host --port --ports ...]` (prompt dilewati preset).
+
+---
+
+## 0. Global `hkall` command
+
+`install.sh` meletakkan `bin/hkall` di PATH (`$PREFIX/bin` di Termux, else `~/bin`) — jadi cukup
+ketik `hkall` dari terminal mana pun (Termux/bash/zsh/WSL). Tanpa install global, jalan langsung:
+
+```bash
+cd hkall && ./bin/hkall --list
+python hkall.py -m scan -h          # per-module flags
+hkall --search sql                  # filter modules
+hkall -m sqlmap ...                 # (contoh hanya, sesuaikan modul)
+```
+
+TUI: `/query` filter, `i N` info modul, `N` jalankan modul, `0`/`q` keluar.
+Completion: source `bin/hkall-completion.bash` (bash) / `.zsh` (zsh) — `hkall -m <TAB>`.
 
 ---
 

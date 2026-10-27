@@ -1,0 +1,10 @@
+#!/bin/sh
+# hkall — global launcher. Resolves repo root from this script's location.
+# Works in Termux, any Linux terminal, WSL. Usage: hkall [-m MODULE] [--host ...] ...
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# follow symlink so `ln -s .../bin/hkall /usr/local/bin/hkall` still finds the repo
+if [ -L "$0" ]; then
+  TARGET=$(readlink -f "$0" 2>/dev/null || readlink "$0")
+  SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$TARGET")" && pwd)
+fi
+exec python3 "$SCRIPT_DIR/../hkall.py" "$@"

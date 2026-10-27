@@ -6,10 +6,34 @@ Python 3 stdlib toolkit for Android/Termux + Linux. Authorized security testing 
 ```bash
 pkg install -y python git termux-api
 git clone https://github.com/rizqiwidi/hkall.git
-cd hkall && chmod +x hkall.py
+cd hkall && chmod +x hkall.py && chmod +x bin/hkall
 python hkall.py
 ```
 Or: `curl -sL https://github.com/rizqiwidi/hkall/raw/master/install.sh | sh`
+
+`install.sh` installs global `hkall` command into PATH (Termux `$PREFIX/bin`,
+else `~/bin`). Works from any terminal — Termux, bash, zsh, WSL.
+
+## Global command (works anywhere with Python 3)
+```bash
+hkall                # TUI menu
+hkall --list         # all modules
+hkall --search sql   # filter modules by name/key
+hkall -m scan -h     # per-module flags help
+hkall -m scan --host 192.168.1.5 --ports 1-1000   # one-shot with presets
+hkall -m idor --host http://192.168.1.5/api/user/{{id}} --range 20
+```
+
+## Shell completion
+- bash: `source $HOME/hkall/bin/hkall-completion.bash`  (add to `~/.bashrc`)
+- zsh: `source $HOME/hkall/bin/hkall-completion.zsh`  (add to `~/.zshrc`)
+- `hkall -m <TAB>` completes module keys.
+
+## TUI navigation
+- `/query` — filter module list by text (e.g. `/sql` shows only matches)
+- `i N` — show usage info for module N
+- `N` — run module N
+- `0` / `q` — exit
 
 ## TUI — 29 builtin+plugin modules
 ```

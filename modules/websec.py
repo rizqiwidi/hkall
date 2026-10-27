@@ -9,6 +9,14 @@ DATA = os.path.join(ROOT, "data")
 def _ask(prompt, default="", ginj=None):
     if ginj:
         return str(ginj.pop(0))
+    # CLI preset queue from hkall main (set by cli_one for -m MODULE presets)
+    try:
+        import __main__ as _m
+        q = getattr(_m, "GINJ", None)
+        if q:
+            return str(q.pop(0))
+    except Exception:
+        pass
     try:
         v = input(prompt + " ").strip()
         return v or default

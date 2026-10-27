@@ -8,7 +8,7 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")
@@ -661,6 +661,8 @@ MODULES = {
 _PLUGIN_KEYS = set()
 def load_plugins():
     global _PLUGIN_KEYS
+    if os.environ.get("HKALL_NOPLUGIN"):
+        return
     import importlib.util
     pdir = os.path.join(ROOT, "modules")
     if not os.path.isdir(pdir): return
@@ -694,17 +696,29 @@ def ask(prompt, default=""):
 
 def main_tui():
     banner()
+    filt = ""
     while True:
-        section("MODULES")
-        ids = list(MODULES)
+        section("MODULES" + (f"  /{filt}" if filt else ""))
+        ids = [k for k in MODULES if not filt or filt in k.lower() or filt in MODULES[k][0].lower()]
         for i, k in enumerate(ids):
             name, _, _ = MODULES[k]
             tag = c(" [plugin]", "33") if k in _PLUGIN_KEYS else ""
             print(f"  [{i+1}] {name}{tag}")
-        print("  [0] exit  |  cli: hkall.py -m MODULE ...")
+        if not ids: print("  (no match)")
+        print("  [0] exit | /query filter | i N info | cli: hkall.py -m MODULE ...")
         try: sel = ask("hkall> ").strip()
         except (KeyboardInterrupt, EOFError): print(); break
+        if not sel: continue
         if sel in ("0", "q", "exit"): break
+        if sel.startswith("/"):
+            filt = sel[1:].strip().lower(); continue
+        if sel.startswith("i ") or sel.startswith("? "):
+            try:
+                idx = int(sel.split(None, 1)[1]) - 1
+                if 0 <= idx < len(ids): print(module_help(ids[idx]))
+                else: print("unknown")
+            except (ValueError, IndexError): print("usage: i N")
+            continue
         try:
             idx = int(sel) - 1
             if 0 <= idx < len(ids):
@@ -714,6 +728,54 @@ def main_tui():
         except ValueError:
             print("unknown")
 
+# ---------------- per-module CLI arg schema ----------------
+# flag -> (help, dest). Used for `hkall -m MODULE --help` and CLI presets.
+# Prompt order for a module must match the order its ask() calls happen.
+MODARGS = {
+    "scan":    {"--host": "target host", "--ports": "port range (1-1000)", "--banner": "banner grab (flag)"},
+    "enum":    {"--host": "target url (http://...)"},
+    "whois":   {"--host": "target host"},
+    "subd":    {"--host": "domain to brute", "--wordlist": "wordlist file"},
+    "shell":   {"--host": "your reachable IP", "--port": "listener port"},
+    "c2":      {"--port": "listen port"},
+    "keylog":  {"--duration": "capture seconds"},
+    "exfil":   {"--host": "listener ip", "--port": "listener port", "--file": "file to send"},
+    "recv":    {"--port": "listen port"},
+    "payload": {"--host": "c2 host", "--port": "c2 port"},
+    "exe2":    {"--host": "c2 host", "--port": "c2 port"},
+    "lan":     {"--host": "cidr (192.168.1.0/24)"},
+    "arp":     {"--host": "cidr", "--iface": "interface (wlan0)"},
+    "wifi":    {},
+    "persist": {},
+    "ops":     {},
+    "serve":   {"--port": "listen port", "--dir": "directory to serve"},
+    "spray":   {"--host": "login url", "--users": "users (comma-sep)", "--wordlist": "password wordlist"},
+    "cfg":     {},
+    "history": {"--kind": "filter kind", "--limit": "row limit"},
+    "sqli":    {"--host": "target url with param (?x=)", "--post": "POST body"},
+    "xss":     {"--host": "target url with param (?q=)", "--post": "POST body"},
+    "csrf":    {"--host": "action url"},
+    "idor":    {"--host": "api url (/user/{{id}})", "--range": "id range hi (1-N)", "--auth": "Authorization header"},
+    "mitm":    {"--host": "victim ip", "--gateway": "gateway ip", "--iface": "interface", "--seconds": "spoof seconds"},
+    "dnsspoof":{"--port": "listen port", "--domain": "domain to answer", "--ip": "answer ip"},
+    "ddos":    {"--host": "target url", "--conns": "concurrency", "--duration": "seconds"},
+    "websec":  {},
+    "toolbox": {},
+    "hello":   {},
+}
+
+def module_help(key):
+    name, _, _ = MODULES[key]
+    args = MODARGS.get(key, {})
+    lines = [f"{key} — {name}"]
+    if args:
+        lines.append("usage: hkall -m %s [options]" % key)
+        for flag, desc in args.items():
+            lines.append(f"  {flag:16} {desc}")
+    else:
+        lines.append("usage: hkall -m %s   (interactive prompts, no CLI presets)" % key)
+    return "\n".join(lines)
+
 def build_parser():
     p = argparse.ArgumentParser(prog="hkall", description="modular offensive toolkit (authorized use only)")
     p.add_argument("-m", "--module", help="run module one-shot: " + ",".join(MODULES))
@@ -721,17 +783,40 @@ def build_parser():
     p.add_argument("--port", type=int, help="port preset")
     p.add_argument("--ports", dest="ports", help="range preset")
     p.add_argument("--out", dest="out", help="save pointer file")
-    p.add_argument("--list", action="store_true")
+    p.add_argument("--list", action="store_true", help="list modules")
+    p.add_argument("--search", dest="search", metavar="QUERY", help="filter module list by name/key")
     return p
 
-def cli_one(key, a):
+def cli_one(key, a, extra=None):
     global GINJ
     vals = []
+    # generic presets first (module prompt order: host-ish then port-ish)
     if a.host: vals.append(a.host)
     if a.port: vals.append(str(a.port))
     if a.ports: vals.append(a.ports)
-    if key == "scan" and a.ports: vals.append("n")       # banner ask
+    # per-module named args from MODARGS (skip generic flags already pushed above)
+    for flag in MODARGS.get(key, {}):
+        if flag in ("--host", "--port", "--ports"):
+            continue
+        if key == "history" and flag in ("--kind", "--limit"):
+            continue
+        dest = flag.lstrip("-").replace("-", "_")
+        v = getattr(extra, dest, None) if extra else None
+        if v is None or v is False or v == "":
+            continue
+        if v is True:      # boolean flag set
+            vals.append("y")
+        else:
+            vals.append(str(v))
+    # scan special-case: banner ask after host/ports
+    if key == "scan" and a.ports: vals.append("n")
     if key == "scan" and a.host and not a.ports: vals += ["1-1000", "n"]
+    # history: two prompts (kind, limit). Ensure kind precedes limit.
+    if key == "history":
+        k = getattr(extra, "kind", None) if extra else None
+        l = getattr(extra, "limit", None) if extra else None
+        vals = [k or "", l or "30"]
+    if key == "cfg" and not vals: vals = ["", ""]
     GINJ = vals
     try: MODULES[key][1]()
     except Exception as e: print(f"error: {e}")
@@ -743,9 +828,12 @@ def cli_one(key, a):
             print(f"out error: {e}")
 
 def cli(a):
-    if a.list:
+    if a.list or a.search:
+        q = (a.search or "").lower()
         for k in MODULES:
             name, _, _ = MODULES[k]
+            if q and q not in k.lower() and q not in name.lower():
+                continue
             tag = "  [plugin]" if k in _PLUGIN_KEYS else ""
             print(f"{k:9} {name}{tag}")
         return
@@ -756,11 +844,52 @@ def cli(a):
         print("unknown module; -m MODULE (--list)")
 
 def main():
-    a = build_parser().parse_args()
-    if a.module or a.list:
+    argv = sys.argv[1:]
+    # per-module help: hkall -m MODULE --help  (checked before argparse errors)
+    if "-m" in argv or "--module" in argv:
+        try:
+            mi = argv.index("-m") if "-m" in argv else argv.index("--module")
+            mkey = argv[mi + 1] if len(argv) > mi + 1 else ""
+        except ValueError:
+            mkey = ""
+        if mkey in MODULES and ("-h" in argv or "--help" in argv):
+            print(module_help(mkey))
+            return
+    a, _ = build_parser().parse_known_args(argv)
+    # two-phase: re-parse with per-module flags after -m is known
+    if a.module in MODULES:
+        extra_flags = MODARGS.get(a.module, {})
+        if extra_flags:
+            p2 = argparse.ArgumentParser(prog=f"hkall -m {a.module}", description=MODULES[a.module][0])
+            p2.add_argument("--host", dest="host")
+            p2.add_argument("--port", dest="port", type=int)
+            p2.add_argument("--ports", dest="ports")
+            p2.add_argument("--out", dest="out")
+            for flag in extra_flags:
+                if flag in ("--host", "--port", "--ports"):
+                    continue
+                dest = flag.lstrip("-").replace("-", "_")
+                if flag in ("--banner",):     # boolean flags
+                    p2.add_argument(flag, dest=dest, action="store_true")
+                else:
+                    p2.add_argument(flag, dest=dest)
+            extra, _ = p2.parse_known_args(argv)
+            # merge: keep generic --host if module didn't define its own value
+            if getattr(extra, "host", None) is None and a.host:
+                extra.host = a.host
+            if getattr(extra, "port", None) is None and a.port:
+                extra.port = a.port
+            cli_one(a.module, a, extra)
+            return
         cli(a)
-    else:
-        main_tui()
+        return
+    if a.module and a.module not in MODULES:
+        print(f"unknown module '{a.module}'; hkall --list  (or hkall -m {a.module} --help)")
+        return
+    if a.list or a.search:
+        cli(a)
+        return
+    main_tui()
 
 if __name__ == "__main__":
     main()

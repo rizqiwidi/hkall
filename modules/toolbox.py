@@ -16,6 +16,14 @@ def _load():
 def _banner(t): print(f"\n== {t} ==")
 
 def _ask(prompt, default=""):
+    # CLI preset queue from hkall main (set by cli_one for -m MODULE presets)
+    try:
+        import __main__ as _m
+        q = getattr(_m, "GINJ", None)
+        if q:
+            return str(q.pop(0))
+    except Exception:
+        pass
     try:
         v = input(prompt + " ").strip()
         return v or default
