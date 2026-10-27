@@ -8,7 +8,7 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")
@@ -350,7 +350,10 @@ def log(name, data, ext="log"):
 def mod_keylog():
     section("KEYLOGGER (termux/linux)")
     dur = ask("duration sec [0=forever]: ").strip() or "0"
-    tk = int(dur) or None
+    try:
+        tk = int(dur) or None
+    except ValueError:
+        print(f"bad duration '{dur}' — treated as forever"); tk = None
     if not _TERMIOS:
         print("keylogger needs a tty; use a real termux shell"); return
     fd = sys.stdin.fileno(); old = termios.tcgetattr(fd); tty.setraw(fd)
@@ -398,9 +401,23 @@ def mod_recv():
     c.settimeout(15)
     meta = b""
     while b"\n" not in meta:
-        d = c.recv(1)
-        if not d: print("client disconnected before meta"); c.close(); srv.close(); return
-    name, size = meta.decode().strip().split("|"); size = int(size)
+        try:
+            d = c.recv(1)
+        except (socket.timeout, TimeoutError):
+            print("timeout waiting for metadata (no \\n in 15s)"); c.close(); srv.close(); return
+        except OSError:
+            print("client disconnected before meta"); c.close(); srv.close(); return
+        if not d:
+            print("client disconnected before meta"); c.close(); srv.close(); return
+        meta += d
+    try:
+        parts = meta.decode().strip().split("|")
+        if len(parts) != 2:
+            print(f"invalid meta format (need 'name|size'): {meta!r}"); c.close(); srv.close(); return
+        name, sz = parts
+        size = int(sz)
+    except (UnicodeDecodeError, ValueError) as e:
+        print(f"invalid meta: {e!r}"); c.close(); srv.close(); return
     c.send(b"K")
     name = os.path.basename(name)
     dest = os.path.join(DATA, name); got = 0
@@ -833,6 +850,7 @@ def module_help(key):
 def build_parser():
     p = argparse.ArgumentParser(prog="hkall", description="modular offensive toolkit (authorized use only)")
     p.add_argument("-m", "--module", help="run module one-shot: " + ",".join(MODULES))
+    p.add_argument("-v", "--version", action="store_true", help="print version and exit")
     p.add_argument("--host", dest="host", help="host/ip/url preset")
     p.add_argument("--port", type=int, help="port preset")
     p.add_argument("--ports", dest="ports", help="range preset")
@@ -910,6 +928,9 @@ def main():
             print(module_help(mkey))
             return
     a, _ = build_parser().parse_known_args(argv)
+    if a.version:
+        print(f"hkall v{VERSION}")
+        return
     # two-phase: re-parse with per-module flags after -m is known
     if a.module in MODULES:
         extra_flags = MODARGS.get(a.module, {})
