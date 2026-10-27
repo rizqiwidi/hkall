@@ -11,7 +11,7 @@ python hkall.py
 ```
 Or: `curl -sL https://github.com/rizqiwidi/hkall/raw/master/install.sh | sh`
 
-## TUI — 21 builtin modules
+## TUI — 29 builtin+plugin modules
 ```
   [1] Port scanner          [2] Web enumerator       [3] DNS / banner lookup
   [4] Subdomain brute DNS   [5] Reverse shell gen    [6] C2 listener (multi-session)
@@ -20,6 +20,9 @@ Or: `curl -sL https://github.com/rizqiwidi/hkall/raw/master/install.sh | sh`
  [13] ARP scan            [14] Wifi audit         [15] Persistence
  [16] Device ops          [17] HTTP static server [18] Web form spray
  [19] Config / profile    [20] History (results)  [21] Exit
+  [22] SQLi tester         [23] XSS reflection     [24] CSRF check
+ [25] IDOR enumeration    [26] ARP MITM (root)    [27] DNS spoof (root)
+ [28] Load test           [29] Orchestrator menu  [30] External tools
 ```
 
 ## CLI one-shot
@@ -38,6 +41,13 @@ python hkall.py -m arp --cidr 192.168.1.0/24
 python hkall.py -m wifi
 python hkall.py -m persist
 python hkall.py -m spray --host https://login.example.com
+python hkall.py -m sqli --host http://192.168.1.5/sqli.php?x=1
+python hkall.py -m xss --host http://192.168.1.5/search.php?q=
+python hkall.py -m csrf --host http://192.168.1.5/account/update
+python hkall.py -m idor --host http://192.168.1.5/api/user/{{id}}
+python hkall.py -m ddos --host http://127.0.0.1:8090/load
+python hkall.py -m websec          # orchestrator menu: chain web tests
+python hkall.py -m toolbox         # external tools launcher (sqlmap/nmap/ffuf/...)
 ```
 
 ## Module reference
@@ -64,6 +74,15 @@ python hkall.py -m spray --host https://login.example.com
 | spray | Credential spray | wordlist brute-force web login forms |
 | cfg | Config profile | set host/port/cidr defaults (persisted) |
 | history | History | view sqlite result store `data/rs.db` |
+| sqli | SQLi tester | 16 payload classic + time-based blind, status/timing diff |
+| xss | XSS reflection | 6 payloads, detects raw reflected vs escaped |
+| csrf | CSRF check | SameSite cookie + token presence verdict |
+| idor | IDOR enum | object ID sweep, authz check per ID |
+| mitm | ARP MITM lab | ARP spoof between two own hosts, auto-restore (root) |
+| dnsspoof | DNS spoof lab | fake DNS server for lab domain (root) |
+| ddos | Load test | bounded concurrency/duration, req/s + byte stats |
+| websec | Orchestrator | menu: chain sqli→xss→csrf→idor against one target |
+| toolbox | External tools | launcher for sqlmap/nmap/hydra/ffuf/bettercap/dnschef/tcpdump |
 
 ## C2 usage
 ```bash

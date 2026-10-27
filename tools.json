@@ -1,0 +1,121 @@
+{
+  "tools": {
+    "sqlmap": {
+      "bin": "sqlmap",
+      "pkg": "sqlmap",
+      "cat": "web",
+      "desc": "SQL injection automated (classic/blind/time/union, DB dump)",
+      "args": [
+        {"flag": "-u", "prompt": "target url (device own)", "required": true},
+        {"flag": "--data", "prompt": "POST body (optional)"},
+        {"flag": "--dbs", "prompt": "enumerate DBs? [y/N]", "bool": true},
+        {"flag": "--tables", "prompt": "enumerate tables? [y/N]", "bool": true},
+        {"flag": "--dump", "prompt": "dump data? [y/N]", "bool": true},
+        {"flag": "--level", "prompt": "level [1-5]", "default": "3"},
+        {"flag": "--risk", "prompt": "risk [1-3]", "default": "2"},
+        {"flag": "--batch", "const": true}
+      ],
+      "notes": "Gunakan --batch untuk non-interaktif. Output tersimpan di ~/.sqlmap/output."
+    },
+    "bettercap": {
+      "bin": "bettercap",
+      "pkg": "bettercap",
+      "cat": "net",
+      "desc": "MITM framework (arp spoof, dns spoof, hsts hijack, http proxy)",
+      "args": [
+        {"flag": "-iface", "prompt": "interface [wlan0]", "default": "wlan0"},
+        {"flag": "-eval", "prompt": "caplet/script (optional, e.g. 'set arp.spoof.targets IP; arp.spoof on')"},
+        {"flag": "-caplet", "prompt": "caplet file (optional)"}
+      ],
+      "needs_root": true,
+      "notes": "Restore otomatis: ARP cache heal on exit (bettercap default)."
+    },
+    "nmap": {
+      "bin": "nmap",
+      "pkg": "nmap",
+      "cat": "recon",
+      "desc": "port scan + service detect + NSE scripts",
+      "args": [
+        {"flag": "target", "prompt": "target host/cidr (device own)", "required": true},
+        {"flag": "-p", "prompt": "ports [1-1000]", "default": "1-1000"},
+        {"flag": "-sV", "prompt": "service version detect? [y/N]", "bool": true},
+        {"flag": "-O", "prompt": "OS detect? [y/N]", "bool": true},
+        {"flag": "-T", "prompt": "timing [0-5]", "default": "4"}
+      ]
+    },
+    "hydra": {
+      "bin": "hydra",
+      "pkg": "hydra",
+      "cat": "auth",
+      "desc": "login brute (ssh/ftp/http-form etc) — own service only",
+      "args": [
+        {"flag": "target", "prompt": "target host:port (own service)", "required": true},
+        {"flag": "-l", "prompt": "login/user", "required": true},
+        {"flag": "-P", "prompt": "password wordlist [wordlist.txt]", "default": "wordlist.txt"},
+        {"flag": "service", "prompt": "service (ssh/ftp/http-post-form...)", "default": "ssh"}
+      ],
+      "needs_root": false
+    },
+    "ffuf": {
+      "bin": "ffuf",
+      "pkg": "ffuf",
+      "cat": "web",
+      "desc": "fast web fuzzer (path/param/vhost)",
+      "args": [
+        {"flag": "-u", "prompt": "target url with FUZZ (device own)", "required": true},
+        {"flag": "-w", "prompt": "wordlist [subd.txt]", "default": "subd.txt"},
+        {"flag": "-mc", "prompt": "match codes [200,301]", "default": "200,301,302"},
+        {"flag": "-t", "prompt": "threads [40]", "default": "40"}
+      ]
+    },
+    "dnschef": {
+      "bin": "dnschef",
+      "pkg": null,
+      "cat": "net",
+      "desc": "fake DNS proxy (lab DNS spoof) — pip install",
+      "pip": "dnschef",
+      "args": [
+        {"flag": "--fakeip", "prompt": "fake ip [127.0.0.1]", "default": "127.0.0.1"},
+        {"flag": "--fakedomains", "prompt": "domains (comma, e.g. test.lab)"},
+        {"flag": "--port", "prompt": "listen port [53]", "default": "53"}
+      ],
+      "needs_root": true
+    },
+    "tcpdump": {
+      "bin": "tcpdump",
+      "pkg": "tcpdump",
+      "cat": "net",
+      "desc": "packet capture (pcap for tshark/wireshark)",
+      "args": [
+        {"flag": "-i", "prompt": "interface [any]", "default": "any"},
+        {"flag": "-w", "prompt": "output pcap [data/cap.pcap]", "default": "data/cap.pcap"},
+        {"flag": "filter", "prompt": "bpf filter (optional, e.g. port 80)"}
+      ],
+      "needs_root": true
+    },
+    "tshark": {
+      "bin": "tshark",
+      "pkg": null,
+      "cat": "net",
+      "desc": "CLI packet analysis (already installed)",
+      "args": [
+        {"flag": "-r", "prompt": "read pcap [data/cap.pcap]", "default": "data/cap.pcap"},
+        {"flag": "-Y", "prompt": "display filter (optional, e.g. http)"},
+        {"flag": "-T", "prompt": "output format [fields]", "default": "fields"}
+      ]
+    },
+    "ettercap": {
+      "bin": "ettercap",
+      "pkg": null,
+      "cat": "net",
+      "desc": "MITM alternative (text UI) — not in termux repo, skip unless source-built",
+      "unavailable": true
+    }
+  },
+  "categories": {
+    "web": "Web vuln (sqli/xss/fuzz)",
+    "net": "Network (MITM/DNS/capture)",
+    "recon": "Recon (nmap)",
+    "auth": "Auth brute (hydra)"
+  }
+}

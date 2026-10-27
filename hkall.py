@@ -8,7 +8,7 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.3.4"
+VERSION = "0.4.0"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")

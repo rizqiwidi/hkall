@@ -6,7 +6,7 @@
 - **Name:** hkall
 - **Platform:** Android/Termux (Python 3), portable to Linux
 - **Type:** modular offensive toolkit (recon, shells, C2, post-exploit, payload, net, device ops)
-- **Version:** 0.3.4 (current)
+- **Version:** 0.4.0 (current)
 - **Repo:** https://github.com/rizqiwidi/hkall
 
 ## 2. Requirements
@@ -46,8 +46,26 @@
 | spray | Web form credential spray | url, form fields | hits logged to rs.db |
 | cfg | Config / profile | key, value | persist to `config.json` |
 | history | History (results store) | kind, limit | view `data/rs.db` |
+| sqli | SQLi tester (plugin) | url | 16-payload classic+time diff, issues |
+| xss | XSS reflection check (plugin) | url | raw-reflected payload list |
+| csrf | CSRF check (plugin) | url | SameSite/token verdict |
+| idor | IDOR enumeration (plugin) | api url + range | accessible IDs |
+| mitm | ARP MITM lab (plugin) | victim/gw/iface | ARP spoof + auto-restore |
+| dnsspoof | DNS spoof lab (plugin) | port/domain/ip | fake DNS server |
+| ddos | Load test (plugin) | url/conn/dur | req/s + byte stats |
+| websec | Orchestrator menu (plugin) | category | chained web tests |
+| toolbox | External tools launcher (plugin) | category/tool | run sqlmap/nmap/hydra/ffuf/bettercap/dnschef/tcpdump via `tools.json` |
 
 ## 5. Development tracker
+
+### v0.4.0 (2026-10-27) — web sec modules + external toolbox
+- [x] `modules/websec.py` plugin: sqli, xss, csrf, idor, mitm, dnsspoof, ddos, websec (orchestrator)
+- [x] `modules/toolbox.py` plugin: external tool launcher with auto-install offer + `tools.json` catalog
+- [x] verified against local lab server: sqli 16/16 detect, xss 6/6 raw-reflect, csrf verdict, idor 1-3 accessible, ddos 181 req/s
+- [x] docs: `docs/USAGE.md` (alur lengkap), README (29 modules + CLI examples), PRD matrix + tracker
+- [x] fixes: `_http_req` HTTPError status passthrough (4xx/5xx are signal), sqli base-status compare, lab query decode
+- [ ] external binaries install (user declined on this device — toolbox offers on demand)
+- [ ] encrypted C2 (TLS) — still backlog
 
 ### v0.1.0 (2026-10-24) — initial
 - [x] core app + 8 modules (scan, enum, shell, c2, keylog, exfil client/server, payload)
