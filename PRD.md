@@ -6,7 +6,7 @@
 - **Name:** hkall
 - **Platform:** Android/Termux (Python 3), portable to Linux
 - **Type:** modular offensive toolkit (recon, shells, C2, post-exploit, payload, net, device ops)
-- **Version:** 0.4.3 (current)
+- **Version:** 0.5.0 (current)
 - **Repo:** https://github.com/rizqiwidi/hkall
 
 ## 2. Requirements
@@ -58,7 +58,16 @@
 
 ## 5. Development tracker
 
+### v0.5.0 (2026-10-27) — multi-platform + full tool catalog (24 tools)
+- [x] `tools.json` → **24 tool**: +dalfox, xsstrike, feroxbuster, responder, mhddos (guide), loic (guide)
+- [x] `bin/hkall-deps` — bootstrap cross-platform: detect Termux→pkg / Linux→apt/dnf/pacman / pip / Go source
+- [x] `tools.json` 18 tool exported — semua muat platform (nmap/hydra/ffuf/bettercap/dnschef/mitmproxy/hping3/dnsmasq/dsniff/ab/siege/wrk/goldeneye/macchanger)
+- [x] toolbox.py rewrite platform-agnostic: `_detect_pm()` (pkg/apt/dnf/pacman/pip), `_install_cmd` per pm, md_only/guide handling, `_pkg_available` platform-aware
+- [x] terverifikasi: 24 tool, `--list` 20 builtin + plugin, sqli/csrf/idor/csrf one-shot final OK, py_compile + sh -n OK
+
 ### v0.4.3 (2026-10-27) — full inventory audit + lab + comprehensive docs
+
+
 - [x] audit inventaris: 29 modul aktif (20 builtin + 8 websec + toolbox) diverifikasi via `--list`
 - [x] `lab/lab_server.py` masuk repo — vulnerable lab (sqli/xss/user/act/load) buat latihan device sendiri, semua modul web terverifikasi terhadapnya
 - [x] `docs/USAGE.md` full rewrite: 27+ modul + 18 tool + alur belajar lengkap + contoh CLI per modul (pakai `hkall` global)

@@ -104,6 +104,9 @@ hkall -m websec
 | web | sqlmap | SQLi auto | tidak |
 | web | ffuf | web fuzz (path/param) | tidak |
 | web | mitmproxy | HTTPS MITM proxy (CA di device sendiri) | transparent mode |
+| web | dalfox | XSS fuzzer (Go) | tidak |
+| web | xsstrike | XSS deteksi + filter bypass (pip) | tidak |
+| web | feroxbuster | path/content fuzz (Rust) | tidak |
 | net | bettercap | MITM framework (arp/dns/sslstrip) | ya |
 | net | dnschef | fake DNS proxy (pip) | ya |
 | net | tcpdump | packet capture | ya |
@@ -112,12 +115,25 @@ hkall -m websec
 | net | dnsmasq | fake DNS via hosts | tidak (pakai -p 5353) |
 | net | dsniff | arpspoof/dnsspoof/macof | ya |
 | net | macchanger | MAC spoof | ya |
+| net | responder | NBNS/LLMNR/mDNS poison (Linux/own net) | ya |
 | recon | nmap | port/service scan | tidak |
 | auth | hydra | login brute (own service) | tidak |
 | load | ab | ApacheBench | tidak |
 | load | siege | load test | tidak |
 | load | wrk | HTTP benchmark | tidak |
 | load | goldeneye | HTTP DoS (lab-only) | tidak |
+
+Guide-only (bukan launcher CLI): `mhddos` (pip source), `loic` (GUI .NET), `ettercap` (bukan di
+Termux repo) — cara pakai & tata letaknya di bawah.
+
+### Tool guide-only / manual build
+- **dalfox** — Go: `go install github.com/hahwul/dalfox/v2@latest`; `dalfox url http://DEVICE/xss?q=FUZZ`
+- **xsstrike** — pip: `pip install xsstrike`  →  `xsstrike -u http://DEVICE/xss?q=param`
+- **feroxbuster** — cargo: `cargo install feroxbuster` → `feroxbuster -u http://DEVICE -w subd.txt -x php`
+- **responder** — pip: `pip install responder` → `responder -I wlan0 -wv` (own network lab; hati-hati LLMNR)
+- **mhddos** — pip: `pip install mhddos` → `python -m mhdos` (load test own service; 88 mode, set kecil)
+- **loic** — GUI .NET, pakai manual interface (bukan Terminal) — tab New Target → URL → IMMA FIRIN MAH LAZOR
+- **ettercap** — hanya build source di Linux (bukan Termux); pakai bettercap/arpspoof sebagai ganti
 
 Status terpasang device ini: `tshark`, `mitmdump` (mitmproxy). Sisanya offer install saat dipilih.
 Contoh pakai toolbox:

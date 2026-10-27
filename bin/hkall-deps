@@ -1,0 +1,49 @@
+#!/bin/sh
+# hkall-deps — bootstrap library/tool dependencies cross-platform.
+# Deteksi OS, install semua tool dari tools.json yang punya metode otomatis.
+# Usage: sh bin/hkall-deps [--all | tool1 tool2 ...]   (default: tool2 target diganti semua)
+set -e
+cd "$(dirname "$0")/.."
+
+# --- platform detect ---
+if [ -n "$TERMUX_VERSION" ] || [ -d /data/data/com.termux ]; then
+  PM=pkg; SUDO=""
+else
+  PM=apt-get; SUDO="sudo "
+  command -v dnf >/dev/null 2>&1 && PM=dnf
+  command -v pacman >/dev/null 2>&1 && PM=pacman
+fi
+echo "== platform: $(uname -s) / $PM =="
+
+# --- pkg tools (nama pkg = kunci di tools.json) ---
+if [ "$PM" = "pkg" ]; then
+  PKG_TOOLS="sqlmap nmap hydra ffuf bettercap tcpdump hping3 dnsmasq dsniff macchanger siege wrk goldeneye apache2-utils mitmproxy"
+  echo "== pkg install $PKG_TOOLS =="
+  # shellcheck disable=SC2086
+  $SUDO pkg install -y $PKG_TOOLS || true
+elif [ "$PM" = "apt-get" ]; then
+  # nama berbeda di Debian: ab = apache2-utils; goldeneye = goldeneye; dsniff = dsniff
+  echo "== apt-get install (coba; beberapa butuh repo security tools) =="
+  $SUDO apt-get update -qq 2>/dev/null || true
+  $SUDO apt-get install -y sqlmap nmap hydra ffuf bettercap tcpdump hping3 dnsmasq dsniff macchanger siege wrk apache2-utils goldeneye mitmproxy 2>/dev/null || true
+elif [ "$PM" = "dnf" ]; then
+  $SUDO dnf install -y nmap hydra tcpdump hping3 dnsmasq dsniff macchanger httpd-tools wrk 2>/dev/null || true
+elif [ "$PM" = "pacman" ]; then
+  $SUDO pacman -S --noconfirm nmap hydra tcpdump hping3 dnsmasq dsniff macchanger apache 2>/dev/null || true
+fi
+
+# --- pip tools ---
+echo "== pip install =="
+python3 -m pip install --user xsstrike dnschef responder 2>/dev/null || \
+python3 -m pip install --user xsstrike dnschef responder || true
+
+# --- source build (Go tools) ---
+if command -v go >/dev/null 2>&1; then
+  echo "== go install dalfox =="
+  go install github.com/hahwul/dalfox/v2@latest || true
+  echo "dalfox -> $HOME/go/bin/dalfox (tambah ~/go/bin ke PATH)"
+fi
+
+echo
+echo "=== selesai. cek: hkall -m toolbox ==="
+echo "tool yang belum: feroxbuster (cargo), MHDDoS (pip), LOIC (GUI) — lihat docs."

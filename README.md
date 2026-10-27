@@ -2,6 +2,10 @@
 
 Python 3 stdlib toolkit for Android/Termux + Linux. Authorized security testing only.
 
+## Platform
+Jalan di device apa saja yang ada Python 3: **Termux (android)**, Linux (Debian/Ubuntu/Arch/Fedora), WSL,
+macOS. Wrapper `bin/hkall` + `bin/hkall-deps` auto-detect package manager. Bukan Termux khusus.
+
 ## Install
 ```bash
 pkg install -y python git termux-api
@@ -10,6 +14,9 @@ cd hkall && chmod +x hkall.py && chmod +x bin/hkall
 python hkall.py
 ```
 Or: `curl -sL https://github.com/rizqiwidi/hkall/raw/master/install.sh | sh`
+
+Install tool/library dependency (opsional, sekali):
+`sh bin/hkall-deps`  — auto-detect pkg/apt/dnf/pacman/pip/Go, pasang semua tool external.
 
 `install.sh` installs global `hkall` command into PATH (Termux `$PREFIX/bin`,
 else `~/bin`). Works from any terminal — Termux, bash, zsh, WSL.

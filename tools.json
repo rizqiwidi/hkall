@@ -221,6 +221,68 @@
         {"flag": "iface", "prompt": "interface [wlan0]", "default": "wlan0"}
       ],
       "needs_root": true
+    },
+    "dalfox": {
+      "bin": "dalfox",
+      "pkg": null,
+      "src": "go install github.com/hahwul/dalfox/v2@latest",
+      "cat": "web",
+      "desc": "fast XSS fuzzer (Go) — build kalau Go ada",
+      "args": [
+        {"flag": "url", "prompt": "target url (device own)", "required": true},
+        {"flag": "--cookie", "prompt": "cookie (optional)"},
+        {"flag": "--skip-bav", "prompt": "skip BAV? [y/N]", "bool": true}
+      ]
+    },
+    "xsstrike": {
+      "bin": "xsstrike",
+      "pkg": null,
+      "pip": "xsstrike",
+      "cat": "web",
+      "desc": "XSS detection + filter bypass (Python pip)",
+      "args": [
+        {"flag": "-u", "prompt": "target url (device own)", "required": true},
+        {"flag": "--crawl", "prompt": "crawl? [y/N]", "bool": true},
+        {"flag": "--level", "prompt": "level [3]", "default": "3"}
+      ]
+    },
+    "feroxbuster": {
+      "bin": "feroxbuster",
+      "pkg": null,
+      "src": "cargo install feroxbuster",
+      "cat": "web",
+      "desc": "async path/content fuzzer (Rust)",
+      "args": [
+        {"flag": "-u", "prompt": "target url (device own)", "required": true},
+        {"flag": "-w", "prompt": "wordlist [subd.txt]", "default": "subd.txt"},
+        {"flag": "-x", "prompt": "extensions (php,html...)"}
+      ]
+    },
+    "responder": {
+      "bin": "responder",
+      "pkg": null,
+      "pip": "responder",
+      "cat": "net",
+      "desc": "NBNS/LLMNR/mDNS poison (was Windows-only; Linux/own-network lab)",
+      "args": [
+        {"flag": "-I", "prompt": "interface [wlan0]", "default": "wlan0"},
+        {"flag": "-w", "prompt": "disable wpad? [n]", "default": "n"}
+      ]
+    },
+    "mhddos": {
+      "bin": null,
+      "pkg": null,
+      "src": "pip",
+      "cat": "load",
+      "desc": "MHDDoS (multi-mode, Python) — load test own service",
+      "md_only": true
+    },
+    "loic": {
+      "bin": null,
+      "pkg": null,
+      "cat": "load",
+      "desc": "LOIC (GUI/.NET) — guide only, tidak bisa jalur CLI",
+      "md_only": true
     }
   },
   "categories": {
