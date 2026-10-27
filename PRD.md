@@ -6,7 +6,7 @@
 - **Name:** hkall
 - **Platform:** Android/Termux (Python 3), portable to Linux
 - **Type:** modular offensive toolkit (recon, shells, C2, post-exploit, payload, net, device ops)
-- **Version:** 0.4.2 (current)
+- **Version:** 0.4.3 (current)
 - **Repo:** https://github.com/rizqiwidi/hkall
 
 ## 2. Requirements
@@ -57,6 +57,14 @@
 | toolbox | External tools launcher (plugin) | category/tool | run sqlmap/nmap/hydra/ffuf/bettercap/dnschef/tcpdump via `tools.json` |
 
 ## 5. Development tracker
+
+### v0.4.3 (2026-10-27) — full inventory audit + lab + comprehensive docs
+- [x] audit inventaris: 29 modul aktif (20 builtin + 8 websec + toolbox) diverifikasi via `--list`
+- [x] `lab/lab_server.py` masuk repo — vulnerable lab (sqli/xss/user/act/load) buat latihan device sendiri, semua modul web terverifikasi terhadapnya
+- [x] `docs/USAGE.md` full rewrite: 27+ modul + 18 tool + alur belajar lengkap + contoh CLI per modul (pakai `hkall` global)
+- [x] `--help` hint saat `HKALL_NOPLUGIN` menyembunyikan plugin
+- [x] typo fix + py_compile semua modul OK
+- [ ] encrypted C2 (TLS) — backlog
 
 ### v0.4.2 (2026-10-27) — global CLI framework + TUI search/info + completion
 - [x] `bin/hkall` global launcher (shebang, symlink-aware), install.sh → PATH (`$PREFIX/bin` / `~/bin`)

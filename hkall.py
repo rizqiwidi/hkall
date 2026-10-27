@@ -8,7 +8,7 @@ try:
 except ImportError:
     _TERMIOS = False
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data"); os.makedirs(DATA, exist_ok=True)
 CFG = os.path.join(ROOT, "config.json")
@@ -884,7 +884,8 @@ def main():
         cli(a)
         return
     if a.module and a.module not in MODULES:
-        print(f"unknown module '{a.module}'; hkall --list  (or hkall -m {a.module} --help)")
+        hint = "  (HKALL_NOPLUGIN diset — jalankan tanpa env itu untuk modul plugin)" if os.environ.get("HKALL_NOPLUGIN") else ""
+        print(f"unknown module '{a.module}'; hkall --list  (or hkall -m {a.module} --help){hint}")
         return
     if a.list or a.search:
         cli(a)

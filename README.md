@@ -152,6 +152,7 @@ PLUGIN = {"mymod": ("My module", mod_mymod, True)}
 Plugins auto-loaded, appear in TUI and CLI. Sample: `modules/hello.py`.
 
 ## Data / artifacts
+- `lab/lab_server.py` — vulnerable local test server (own device, 127.0.0.1:8090) for sqli/xss/csrf/idor/ddos practice
 - `data/rs.db` — sqlite history (kind, target, ts, data)
 - `data/keys.log` — keylogger capture
 - `data/payload.py` — built payload
