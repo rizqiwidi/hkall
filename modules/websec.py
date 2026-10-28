@@ -432,6 +432,7 @@ def mod_sniff():
     import re as _re
     stop = [time.time() + secs]
     hits = []
+    HIT_CAP = 1000  # batasi memory pada traffic padat (K2). ponytail: naikkan kalau perlu banyak
     try:
         while time.time() < stop[0]:
             try:
@@ -451,8 +452,9 @@ def mod_sniff():
                         else:
                             ssid = ""  # broadcast probe
                         if ssid and ssid.isprintable():
-                            hits.append(("probe", ssid, pkt[10:16].hex(":")))
-                            print(f"[probe] {ssid} src={pkt[10:16].hex(':')}")
+                            if len(hits) < HIT_CAP:
+                                hits.append(("probe", ssid, pkt[10:16].hex(":")))
+                                print(f"[probe] {ssid} src={pkt[10:16].hex(':')}")
                     except Exception:
                         pass
             else:
@@ -475,7 +477,7 @@ def mod_sniff():
                     if m:
                         line = body[:80].replace("\n", " ")
                         key = (m.group(0),)
-                        if key not in hits:
+                        if key not in hits and len(hits) < HIT_CAP:
                             hits.append(key)
                             print(f"[cred] {dport==80 and 'C->S' or 'S->C'} {sport}:{dport} {line}")
     except KeyboardInterrupt:
@@ -549,6 +551,8 @@ def mod_eviltwin():
             try: httpd.shutdown()
             except Exception: pass
         try: os.chdir(old_cwd)
+        except Exception: pass
+        try: _tf.rmtree(d, ignore_errors=True)
         except Exception: pass
         print("evil twin stopped.")
 

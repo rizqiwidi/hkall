@@ -1,7 +1,11 @@
 #!/bin/sh
 # hkall installer — run once
 set -e
-pkg install -y python git termux-api 2>/dev/null || pkg install -y python git
+if command -v pkg >/dev/null 2>&1; then
+  pkg install -y python git termux-api 2>/dev/null || pkg install -y python git
+elif command -v apt-get >/dev/null 2>&1; then
+  apt-get install -y python3 git 2>/dev/null || sudo apt-get install -y python3 git
+fi
 if [ ! -d "$HOME/hkall" ]; then
   git clone https://github.com/rizqiwidi/hkall.git "$HOME/hkall"
 else

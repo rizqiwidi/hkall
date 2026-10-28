@@ -2,7 +2,10 @@
 # hkall-deps — bootstrap library/tool dependencies cross-platform.
 # Deteksi OS, install semua tool dari tools.json yang punya metode otomatis.
 # Usage: sh bin/hkall-deps [--all | tool1 tool2 ...]   (default: tool2 target diganti semua)
-set -e
+# Exit 0 best-effort; FAIL ditandai (grep FAIL) — tidak pakai set -e supaya semua tool dicoba.
+FAIL=""; OKS=""
+fail() { FAIL="$FAIL $1"; echo "  [FAIL] $1"; }
+ok()   { command -v "$1" >/dev/null 2>&1 && echo "  [ok] $1"; }
 cd "$(dirname "$0")/.."
 
 # --- platform detect ---
@@ -21,29 +24,51 @@ if [ "$PM" = "pkg" ]; then
   echo "== pkg install $PKG_TOOLS =="
   # shellcheck disable=SC2086
   $SUDO pkg install -y $PKG_TOOLS || true
+  for t in sqlmap nmap hydra ffuf bettercap tcpdump hping3 dnsmasq dsniff macchanger siege wrk mitmproxy; do
+    command -v "$t" >/dev/null 2>&1 || fail "$t"
+  done
+  ok sqlmap; ok nmap; ok hydra; ok ffuf; ok bettercap; ok tcpdump; ok hping3; ok dnsmasq; ok dsniff; ok macchanger; ok siege; ok wrk; ok mitmproxy
 elif [ "$PM" = "apt-get" ]; then
   # nama berbeda di Debian: ab = apache2-utils; goldeneye = goldeneye; dsniff = dsniff
   echo "== apt-get install (coba; beberapa butuh repo security tools) =="
   $SUDO apt-get update -qq 2>/dev/null || true
   $SUDO apt-get install -y sqlmap nmap hydra ffuf bettercap tcpdump hping3 dnsmasq dsniff macchanger siege wrk apache2-utils goldeneye mitmproxy 2>/dev/null || true
+  for t in sqlmap nmap hydra ffuf bettercap tcpdump hping3 dnsmasq dsniff macchanger siege wrk ab goldeneye mitmproxy; do
+    command -v "$t" >/dev/null 2>&1 || fail "$t"
+  done
 elif [ "$PM" = "dnf" ]; then
   $SUDO dnf install -y nmap hydra tcpdump hping3 dnsmasq dsniff macchanger httpd-tools wrk 2>/dev/null || true
+  for t in nmap hydra tcpdump hping3 dnsmasq dsniff macchanger ab wrk; do
+    command -v "$t" >/dev/null 2>&1 || fail "$t"
+  done
 elif [ "$PM" = "pacman" ]; then
   $SUDO pacman -S --noconfirm nmap hydra tcpdump hping3 dnsmasq dsniff macchanger apache 2>/dev/null || true
+  for t in nmap hydra tcpdump hping3 dnsmasq dsniff macchanger ab; do
+    command -v "$t" >/dev/null 2>&1 || fail "$t"
+  done
 fi
 
 # --- pip tools ---
 echo "== pip install =="
 python3 -m pip install --user xsstrike dnschef responder 2>/dev/null || \
 python3 -m pip install --user xsstrike dnschef responder || true
+for t in xsstrike dnschef responder; do
+  command -v "$t" >/dev/null 2>&1 || python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('$t') else 1)" 2>/dev/null || fail "$t (pip)"
+done
 
 # --- source build (Go tools) ---
 if command -v go >/dev/null 2>&1; then
   echo "== go install dalfox =="
   go install github.com/hahwul/dalfox/v2@latest || true
   echo "dalfox -> $HOME/go/bin/dalfox (tambah ~/go/bin ke PATH)"
+  command -v dalfox >/dev/null 2>&1 || [ -x "$HOME/go/bin/dalfox" ] || fail dalfox
 fi
 
 echo
-echo "=== selesai. cek: hkall -m toolbox ==="
+if [ -n "$FAIL" ]; then
+  echo "=== selesai dengan yang GAGAL terpasang:$FAIL ==="
+  echo "coba manual per tool (lihat docs/USAGE.md C)."
+else
+  echo "=== semua tool terpasang. cek: hkall -m toolbox ==="
+fi
 echo "tool yang belum: feroxbuster (cargo), MHDDoS (pip), LOIC (GUI) — lihat docs."

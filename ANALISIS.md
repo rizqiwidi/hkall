@@ -81,45 +81,32 @@ Tidak ada satupun test; tiap fix sebelumnya diuji manual lewat smoke. `hkall.py`
 
 ---
 
-## Kemungkinan Bug / Risiko Masa Depan (Terbuka — belum difix)
+## Kemungkinan Bug / Risiko Masa Depan
 
-### K1 — AF_PACKET macOS/WSL (sudah difix ✅)
+### K1 — AF_PACKET macOS/WSL — ✅ FIXED
+### K2 — `mod_sniff` unlimited `hits` (N14) — ✅ FIXED (`HIT_CAP=1000`, probe & creds)
+### K3 — `mod_spray` tanpa rate-limit — ✅ FIXED (delay 0.05s/attempt)
+### K4 — `_save` sqlite tanpa migration — catatan: schema belum berubah; WAJIB migration bila nanti tambah kolom. Tidak ada kode.
+### K5 — config.json korup silent — ✅ FIXED (warning stderr di `load_cfg`)
+### K6 — `bin/hkall-deps` sukses palsu — ✅ FIXED (`[FAIL]`/`[ok]` per tool)
+### K7 — c2 tanpa auth — ✅ FIXED (PSK handshake `data/c2.psk`; server auth `c2_accept`; payload embed PSK)
+### K8 — install.sh non-Termux `pkg` unguarded — ✅ FIXED (`command -v pkg` / apt-get fallback)
+### K9 — keylog tty guard — resolved
+### K10 — eviltwin cwd — ✅ FIXED
+### K11 — ops subprocess guard — ✅ FIXED
+### K12 — dnsspoof ipb ValueError — ✅ FIXED
+### K13 — cli_one scan banner GINJ order — ✅ FIXED
+### K14 — arp dedupe O(n²) — ✅ FIXED (`seen_ips` set O(1))
+### N23 — cli_one spray GINJ order cacat (`--users` masuk prompt user_field) — ✅ FIXED (slot khusus spray)
+### N24 — recv/serve/c2/exfil bind-in-use & port non-numeric crash — ✅ FIXED (try/except + pesan)
+### N25 — parse_ranges trailing comma crash — ✅ FIXED (skip empty part)
+### N26 — mod_keylog non-tty termios error — ✅ FIXED (tcgetattr try/except)
+### N27 — mod_payload port non-numeric — ✅ FIXED (try int(port) sebelum template)
+### N28 — eviltwin temp dir leak — ✅ FIXED (`_tf.rmtree` di finally)
 
-### K2 — `mod_sniff` unlimited `hits` (N14) — **open**: padat network → memory + `hits` simpan di db besar. Fix: cap 1000 + warn.
-
-### K3 — `mod_spray` tanpa rate-limit/delay — open (backlog)
-
-### K4 — `_save` sqlite tanpa migration — open (catat jangan naikkan schema tanpa migration)
-
-### K5 — config.json korup silent fallback — open (warning stderr)
-
-### K6 — `bin/hkall-deps` `set -e` + `|| true` sukses palsu — open
-
-### K7 — c2 tanpa auth handshake: XOR obfus bukan auth; main mapping XOR bisa salah mix obs/non-obs — open (saran: handshake)
-
-### K8 — install.sh non-Termux `pkg` unguarded — open (TAPI TERMUX-only path; bin/hkall-deps sudah cross-platform; minor)
-
-### K9 — keylog tty guard OK — resolved
-
-### K10 — **`os.getcwd()` berubah oleh eviltwin (N19)** — ✅ FIXED (restore cwd di finally)
-
-### K11 — **`mod_ops` subprocess tanpa try FileNotFoundError (N12)** — ✅ FIXED (cam/vib/mic try/except)
-
-### K12 — **`mod_dnsspoof` ipb ValueError (N18)** — ✅ FIXED (try/except + pesan)
-
-### K13 — **`cli_one` scan banner GINJ urutan cacat (N04)** — ✅ FIXED (special-case scan gabung banner)
-
-### K14 — **N10: arp set comprehension O(n²) per recv** — open: hanya terasa /16; cap 2048 → low.
-
-### K2/K3/K4/K5/K6/K7 — tetap open (dok/catatan masa depan)
-
----
-
-## Prioritas Rekomendasi Berikutnya
-
-1. **K14 (arp O(n²)) + K7 (c2 handshake) + K2 (sniff hits cap)** — open, belum difix.
-2. K3/K4/K5/K6 — catatan masa depan.
-3. N01/N02 — low.
+## Sisa open (dok catatan masa depan, tanpa kode)
+- K4 sqlite migration — WAJIB migration bila schema `rs` berubah.
+- N01 (test otomatis), N02 (ddos timeout bias) — low.
 
 ---
 
@@ -127,6 +114,7 @@ Tidak ada satupun test; tiap fix sebelumnya diuji manual lewat smoke. `hkall.py`
 - Baca ulang semua sumber: hkall.py (993L), websec.py (715L), toolbox.py (196L), hello.py, lab_server.py, install.sh, bin/hkall, bin/hkall-deps, tools.json, README/MANUAL/USAGE.
 - Commit fix sebelumnya sudah push (`8cf3448`, `4f97693`).
 - **Sesi ini difix:** N04 (scan banner order), K10 (eviltwin cwd restore), K11 (ops subprocess guard), K12 (dnsspoof ipb guard).
+- **Sesi lanjutan difix:** N23/spray GINJ slot, recv/serve/c2/exfil port guard, keylog non-tty guard, load_cfg warn, parse_ranges comma, spray rate-limit (K3), sniff HIT_CAP (K2), arp seen_ips set (K14), hkall-deps honest FAIL (K6), c2 PSK auth handshake (K7), install.sh pkg guard (K8), eviltwin rmtree (N20). Semua py_compile + shell -n OK.
 
 ---
 _Dokumen ini hasil analisis statik. Bug kelas network (AF_PACKET, ARP) tetap butuh uji LAN nyata._
