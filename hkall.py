@@ -607,14 +607,23 @@ def mod_ops():
     def sms(): print("sms:", _tapi("sms-list", "-n", "10"))
     def cam():
         o = os.path.join(DATA, f"cam_{int(time.time())}.jpg")
-        subprocess.run(["termux-camera-photo", "-c", "1", o], timeout=20)
+        try: subprocess.run(["termux-camera-photo", "-c", "1", o], timeout=20)
+        except FileNotFoundError: print("termux-camera-photo tidak ada — pkg install termux-api"); return
+        except subprocess.TimeoutExpired: print("camera timeout"); return
         print(f"photo -> {o}" if os.path.exists(o) else "fail (perm?)")
-    def loc(): print("loc:", _tapi("location") or "no fix")
-    def vib(): subprocess.run(["termux-vibrate", "-d", "500", "-f"], timeout=5); print("buzzed")
+    def vib(): 
+        try: subprocess.run(["termux-vibrate", "-d", "500", "-f"], timeout=5)
+        except FileNotFoundError: print("termux-vibrate tidak ada — pkg install termux-api"); return
+        except subprocess.TimeoutExpired: pass
+        print("buzzed")
     def mic():
         o = os.path.join(DATA, f"mic_{int(time.time())}.m4a")
-        subprocess.run(["timeout", "5", "termux-microphone-record", "-f", o], timeout=8)
-        subprocess.run(["pkill", "-f", "termux-microphone-record"])
+        try:
+            subprocess.run(["timeout", "5", "termux-microphone-record", "-f", o], timeout=8)
+        except FileNotFoundError: print("termux-microphone-record/tidak ada — pkg install termux-api"); return
+        except subprocess.TimeoutExpired: pass
+        try: subprocess.run(["pkill", "-f", "termux-microphone-record"])
+        except Exception: pass
         print(f"rec -> {o}" if os.path.exists(o) else "fail (mic perm?)")
     def clip(): print("clip:", _tapi("clipboard-get") or "(empty)")
     ACT = {"a": bat, "b": inf, "c": sms, "d": cam, "e": loc, "f": vib, "g": mic, "h": clip}
@@ -893,6 +902,9 @@ def cli_one(key, a, extra=None):
             continue
         if key == "history" and flag in ("--kind", "--limit"):
             continue
+        # scan handles --banner in its special-case below (prompt order: host, ports, grab)
+        if key == "scan" and flag == "--banner":
+            continue
         dest = flag.lstrip("-").replace("-", "_")
         v = getattr(extra, dest, None) if extra else None
         if v is None or v is False or v == "":
@@ -901,10 +913,12 @@ def cli_one(key, a, extra=None):
             vals.append("y")
         else:
             vals.append(str(v))
-    # scan special-case: banner ask after host/ports
-    if key == "scan" and a.ports: vals.append("n")
-    if key == "scan" and a.host and not a.ports: vals += ["1-1000", "n"]
-    # history: two prompts (kind, limit). Ensure kind precedes limit.
+    # scan special-case: banner ask after host/ports. --banner flag -> "y", else "n".
+    if key == "scan":
+        if a.ports: vals.append("y" if (extra and getattr(extra, "banner", False)) else "n")
+        elif a.host: vals += ["1-1000", "y" if (extra and getattr(extra, "banner", False)) else "n"]
+        elif getattr(extra, "banner", False): vals += ["1-1000", "y"]
+        elif not vals: vals += ["1-1000", "n"]
     if key == "history":
         k = getattr(extra, "kind", None) if extra else None
         l = getattr(extra, "limit", None) if extra else None

@@ -519,6 +519,7 @@ def mod_eviltwin():
                 "<br><button>Connect</button></form></body></html>")
     procs = []
     httpd = None
+    old_cwd = os.getcwd()
     try:
         import http.server as _hs
         os.chdir(d)
@@ -547,6 +548,8 @@ def mod_eviltwin():
         if httpd:
             try: httpd.shutdown()
             except Exception: pass
+        try: os.chdir(old_cwd)
+        except Exception: pass
         print("evil twin stopped.")
 
 # ---------------------------------------------------------------- dns spoof
@@ -558,7 +561,10 @@ def mod_dnsspoof():
     dom = _ask("domain to answer (e.g. test.lab):").strip().lower()
     ip = _ask("answer ip (e.g. 127.0.0.1):").strip()
     if not dom or not ip: print("domain+ip required"); return
-    ipb = bytes(int(x) for x in ip.split("."))
+    try:
+        ipb = bytes(int(x) for x in ip.split("."))
+    except ValueError:
+        print(f"IP tidak valid ({ip!r}) — butuh format a.b.c.d"); return
     stop = [False]
     sock_box = [None]
     bind_ok = [False]

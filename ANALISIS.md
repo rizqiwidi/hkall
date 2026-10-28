@@ -1,199 +1,132 @@
 # hkall — Analisis Mendalam & Daftar Bug
 
-**Tanggal:** 2026-10-28
-**Scope:** hkall.py (~983L), modules/websec.py (~675L), modules/toolbox.py (196L), lab/lab_server.py, tools.json, bin/, install.sh, docs
+**Tanggal:** 2026-10-28 (revisi: analisis menyeluruh kedua — selesai baca seluruh sumber)
+**Scope:** hkall.py (993L), modules/websec.py (715L), modules/toolbox.py (196L), modules/hello.py, lab/lab_server.py, tools.json, bin/, install.sh, README, docs/MANUAL.md, docs/USAGE.md
+**Status:** sesi analisis + perbaikan sebelumnya sudah push 2 commit (`8cf3448`, `4f97693`). Fokus sesi ini = **catat** temuan baru (belum diedit).
 
 ---
 
-## Ringkasan Severity
+## Ringkasan Status Fix (yang sudah diperbaiki di sesi sebelumnya)
 
-| # | Sev | File | Modul | Temuan |
-|---|-----|------|-------|--------|
-| A01 | HIGH | websec.py | mitm | restore() memakai `pkt(gmac, gw, 2)` — argumen terbalik (lihat F2/F6 historis) |
-| A02 | HIGH | websec.py | netcut | frame restore argumen rawan salah urutan; fallback gmac dummy `ffffffffffff` |
-| A03 | HIGH | hkall.py | c2 | `xor_stream(cmd,1)` vs `xor_stream(buf,2)` — mapping key_rot beda arah, dokumentasi diklaim sinkron tapi rawan salah client |
-| A04 | HIGH | hkall.py | payload | `PORT={port}` string literal di XSS payload obfuscated — integer jadi string |
-| A05 | HIGH | websec.py | sniff | probe SSID parse: `pkt[25]` = len, tapi frame control mask & offset rawan salah (F19 lalu fix) |
-| A06 | MED | hkall.py | spray | `code==200` dianggap hit → false positive massal (backlog B5) |
-| A07 | MED | websec.py | ddos | `while time.time()-t0<dur and not (...>` dobel kondisi; bounded OK tapi off-by-one |
-| A08 | MED | hkall.py | discover | 2545 cap + thread 64 batch, tapi `/24` = 254 probe thread |
-| A09 | MED | websec.py | csrf | hanya cek Set-Cookie samesite + token di body GET — false positive "hardened" |
-| A10 | MED | hkall.py | arp | `net2ip(base,1)` hardcode SP sender IP — bukan IP interface asli |
-| A11 | MED | websec.py | deauth | `bytes.fromhex(client_raw)` crash kalau MAC bukan hex valid |
-| A12 | MED | hkall.py | exfil | `f"{name}|{size}"` — nama file mengandung `|` di split recv |
-| A13 | MED | install.sh | — | `[: ...h]` false → zsh completion tidak pernah terpasang |
-| A14 | MED | README.md | — | 30 "External tools" di daftar TUI tidak ada di MODULES |
-| A15 | LOW | hkall.py | keylog | tty capture tanpa timeout guard — bisa hang selamanya |
-| A16 | LOW | hkall.py | ops | mic `pkill -f` bisa kill proses lain; cam/cam tanpa cek returncode |
-| A17 | LOW | websec.py | eviltwin | proses tidak di-kill setelah Popen terminate (zombie); port 80 hardcode |
-| A18 | LOW | hkall.py | c2 | accept thread daemon — session hilang setelah c2 exit |
-| A19 | LOW | websec.py | xss | false negative — payload URL-encoded di GET jadi tidak ter-refleksi sama persis |
-| A20 | LOW | hkall.py | mod_history | `int(n)` ValueError tidak di-catch di cli_one |
-| A21 | LOW | README.md | — | jumlah modul ("29"/"30") tidak sinkron dengan MODULES (20 builtin + 12 plugin) |
-| A22 | LOW | docs | — | MODARGS `--range` untuk idor tidak dipakai cli_one (skip history/k kind) |
-| A23 | INFO | README.md | — | contoh `--cidr` untuk lan/arp — flag tidak ada di MODARGS |
-## Detail Temuan
-
-### A01 — HIGH: `mod_mitm` restore() argumen frame terbalik
-**File:** `modules/websec.py`, `restore()` di `mod_mitm()`
-**Masalah:** `s.send(pkt(gmac, gw, 2))` — helper `pkt(claims_mac, claims_ip, op)` menaruh `claims_mac` sebagai *sender* dan `claims_ip` sebagai *sender IP*. Saat restore ingin memberitahu korban "gw sebenarnya di gmac", pasangan yang benar adalah `pkt(gmac, gw, 2)`. Baca ulang:
-```python
-def pkt(claims_mac, claims_ip, op, dst_mac=...):
-    p = struct.pack(...)
-    p += bytes.fromhex(claims_mac) + socket.inet_aton(claims_ip)   # sender = claims
-    p += bytes.fromhex(gmac if claims_ip == gw else vmac) + socket.inet_aton(gw if claims_ip == gw else vi)
-    return dst_mac + bytes.fromhex(amac) + b"\x08\x06" + p
-```
-Analisis: `pkt(gmac, gw, 2)` → sender=gmac@gw, target=vmac@vi? `claims_ip == gw` true → target MAC = `gmac`, target IP = `gw`. Artinya frame ini dipakai untuk memberitahu **gw** bahwa ia sendiri ada di gmac — tidak memberitahu korban. Ini sama dengan bug F2 historis (yang sudah di-fix untuk netcut, tapi pola mirip muncul di mitm restore).
-**Risiko:** ARP cache tidak di-heal benar → korban/gw tetap memakai mapping attacker → koneksi korban tetap lewat attacker setelah mitm "selesai".
-**Fix saran:** tambahkan argumen target eksplisit, uji dengan 2 host lab + `arp` di kedua sisi.
-
-### A02 — HIGH: `mod_netcut` fallback gmac dummy + urutan frame
-**File:** `modules/websec.py`, `mod_netcut()`
-**Masalah:** `gmac_raw = mac(gw)`; kalau gateway tidak di ARP table → `gmac_raw = "ffffffffffff"` (broadcast), lalu dipakai sebagai sender MAC di frame restore. Broadcast MAC sebagai sender = device lain bisa menerima restore frame yang salah.
-**Risiko:** restore tidak efektif, atau restore frame malah dianggap reply dari broadcast.
-**Fix saran:** bila gmac tidak resolve, jangan restore dengan ffffff; log peringatan dan batalkan restore bertahap.
-
-### A03 — HIGH: mapping XOR obfuscation c2 tidak konsisten terdokumentasi
-**File:** `hkall.py`, `mod_c2()` vs `mod_payload()` obfuscated
-**Masalah:** Server kirim command: `send = xor_stream(cmd.encode()+b"\n", 1)`. Client decrypt: `x(cmd,1)`. Output client kirim `x(...,2)`; server baca `xor_stream(buf, 2)`. Ini **sinkron** (benar). Tapi `analysis.md` B2/B9 mencatat key_rot "1=cmd, 2=out" — dokumentasi internal konsisten.
-**Risiko nyata:** kalau payload obfuscated dibuat dengan `xm=True`, orang harus ingat mapping exact. Satu-satunya yang tidak sinkron: **string HOST/PORT** di payload (lihat A04).
-**Catatan:** ini bukan bug runtime, tapi rawan kesalahan bila user mix payload obs/non-obs di session sama (client obs terima command plain = salah decrypt).
-**Fix saran:** kirim handshake byte di awal (mis. `OBF1\n`), client auto-detect.
-
-### A04 — HIGH: payload obfuscated PORT jadi string literal
-**File:** `hkall.py`, `mod_payload()` `xm=True` branch
-**Masalah:**
-```python
-HOST,PORT="{host}",{port}
-```
-`port` dari `get_port()` adalah string (default "4444"). Di template obfuscated `PORT` di-embed tanpa `int()`, lalu dipakai `s.connect((HOST,int(PORT)))` — ada `int(PORT)`, jadi aman di jalur connect. **Tapi** tidak konsisten dengan branch non-obs yang pakai `{int(port)}` di literal template (aman). Jadi sebenarnya A04 = **bukan bug runtime** (int(PORT) ada), tapi rawan bila template diedit. → demote ke INFO.
-
-### A05 — MED: sniff mode 'p' probe SSID offset rawan
-**File:** `modules/websec.py`, `mod_sniff()`
-**Masalah:** `slen = pkt[25]` — byte 25 = panjang SSID IE. Benar kalau frame control handling tepat: `(pkt[0] & 0xf0) == 0x40` (probe request). Tapi kalau interface non-monitor memberikan header 802.11 radiotap/LLC, offset 25 bisa salah → garbage SSID atau IndexError di `pkt[26:26+slen]` (kalau `slen` besar) — `except Exception` menutupi.
-**Risiko:** false SSID, atau silent skip. 
-**Fix saran:** validasi `slen < len(pkt)-26` sebelum slice.
-
-### A06 — MED: spray false positive (backlog B5)
-**File:** `hkall.py`, `mod_spray()`
-**Masalah:** `ok = code in (301,302,303) or (code == 200)` — credible login gagal sering juga 200/302. Tambahan: `req` masing-masing attempt dibuat fresh (tanpa cookie jar), jadi 302/Set-Cookie utama "login sukses" bisa salah deteksi.
-**Fix saran (backlog legit):** perlu compare body (stdlib `urllib` bisa `read()` dan cek marker login-page), atau minimal cek panjang body berubah drastis. Jangan hanya status.
-
-### A07 — LOW: ddos loop kondisi dobel
-**File:** `modules/websec.py`, `mod_ddos()`
-**Masalah:** `while time.time() - t0 < dur and not (time.time() - t0 > dur + 1):` — klausa kedua redundan (kalau < dur sudah cukup). Bukan error fatal, tapi tiap worker bisa jalan sampai `dur+1` detik (bounded cap masih berlaku).
-
-### A08 — LOW: discover hardcode 2545 cap
-**File:** `hkall.py`, `mod_discover()`
-**Masalah:** `range(1, min(2**(32-mask), 2545))` — untuk /16 cap 2545 IP, tapi probe 7 port × 2545 IP di batch 64 tetap besar (18 detik × 7 port). Cap aman dari OOM, tapi lambat. Bukan bug.
-
-### A09 — MED: csrf verdict palsu "hardened"
-**File:** `modules/websec.py`, `mod_csrf()`
-**Masalah:** `same_site = "samesite" in cookies.lower()` — hanya cek kata "samesite", tidak cek nilai `Lax`/`Strict`/`None`. `SameSite=None` masih vuln terhadap cross-site POST. Plus `has_token` hanya cek nama field di body GET — token di cookie/header tidak terlihat → false "MISSING" juga mungkin.
-**Fix saran:** parse nilai SameSite dari header (regex `samesite=(\w+)`), dan juga cek `Set-Cookie` default browser (modern default Lax).
-
-### A10 — MED: arp hardcode sender IP `net2ip(base,1)`
-**File:** `hkall.py`, `mod_arp()`
-**Masalah:** `req = eth + ... + mymac + socket.inet_aton(net2ip(base, 1)) + ...` — SPA (sender protocol address) di-set ke IP kedua network, bukan IP interface sebenarnya. Kalau interface IP berbeda (mis. `.5`), ARP reply untuk host yang kita minati tidak kita terima → host "ghost" di hasil. Untuk LAB yang IP-nya = base+1, kebetulan benar.
-**Fix saran:** dapatkan IP interface via `fcntl`/`getnameinfo` atau stdlib `socket` binding; atau jadikan param.
-
-### A11 — MED: deauth `bytes.fromhex` crash pada MAC non-hex
-**File:** `modules/websec.py`, `mod_deauth()`
-**Masalah:** `ap_raw = ap_mac.replace(":", "")` tanpa validasi — user ketik `wlan0` atau `11:22` → `bytes.fromhex` → `ValueError` → crash (traceback, bukan pesan ramah).
-**Fix saran:** regex validasi Mac `^[0-9a-fA-F:]{17}$` sebelum fromhex, print pesan jelas.
-
-### A12 — MED: exfil metadata `name|size` rawan delimiter di nama file
-**File:** `hkall.py`, `mod_exfil()` / `mod_recv()`
-**Masalah:** client kirim `f"{name}|{size}\n"`; server `meta.decode().strip().split("|")` dan cek `len(parts)!=2`. Nama file yang mengandung `|` → split jadi 3+ → server tolak "invalid meta". Nama file umum tidak pakai `|`, tapi edge case belum di-handle.
-**Fix saran:** pakai seperscript header dua baris (`name\nsize\n`) atau escape/splitlimit `[name, size] = split("|", 1)` di sisi nama (size tidak boleh ada `|`).
-### A13 — MED: install.sh zsh completion tidak pernah aktif
-**File:** `install.sh`
-**Masalah:** `case "$(basename "$SHELL")" in zsh) ... esac` — SHELL hampir selalu `zsh` tanpa path, tapi blok hanya jalan bila tepat `zsh`. Di Termux shell default `SHELL` bisa `basename=/data/data/.../zsh` → tidak match `zsh` → completion tidak terlink. Tidak fatal (completion opsional), tapi dokumentasi "zsh completion linked" tidak terjadi.
-
-### A14 — MED: README daftar TUI tidak sinkron dengan MODULES
-**File:** `README.md`
-**Masalah:** README menulis "30 External tools" dan daftar 30 nomor, tapi `MODULES` cuma 20 builtin; plugin websec menyumbang 12 lagi → total 32, dan `toolbox`/`websec`/`hello` muncul. Angka & label di README (29/30/32) tidak konsisten antar versi. Bukan bug runtime, tapi docs misleading.
-
-### A15 — LOW: keylog tty mode tanpa timeout guard
-**File:** `hkall.py`, `mod_keylog()`
-**Masalah:** kalau `dur=0` (forever) dan user lupa ctrl-c, capture berjalan selamanya di tty raw; `select` timeout 0.3s OK, tapi tidak ada batas maksimum. By-design (forever), tapi bisa lupa. Tambah prompt konfirmasi bila `dur=0`.
-
-### A16 — LOW: ops mic `pkill -f` overkill + no returncode cek
-**File:** `hkall.py`, `mod_ops()`
-**Masalah:** `pkill -f termux-microphone-record` bisa membunuh proses lain yang mengandung string itu di cmdline; `termux-camera-photo`/`vibrate` tanpa cek returncode → "sukses" padahal gagal (mis. permission). `analysys.md` B14 sudah catat.
-
-### A17 — LOW: eviltwin process zombie + port 80 hardcode
-**File:** `modules/websec.py`, `mod_eviltwin()`
-**Masalah:** `Popen([...])` setelah terminate tidak di-`wait()` → zombie bila loop berakhir; `HTTPServer((gw_ip,80))` hardcode port 80 → konflik kalau sudah ada service. Non-daemon `hostapd` Popen tetap jalan setelah `httpd.shutdown()` bila terminate gagal. Fix: `p.wait(timeout=2)` + `p.kill()` di finally, dan tunda bind port dengan deteksi EADDRINUSE.
-
-### A18 — LOW: c2 sessions hilang saat accept thread mati
-**File:** `hkall.py`, `mod_c2()` / `c2_accept()`
-**Masalah:** accept thread daemon berhenti kalau `srv.accept()` OSError (socket ditutup saat exit) — wajar. Tapi `SESSIONS` tidak diprun saat thread mati; session mati di tengah `input()` loop: `use S1` lalu `sessions` menampilkan session yang sudah dead (tidak ada timeout probe). Minor UX.
-
-### A19 — LOW: xss false negative untuk payload URL-encoded
-**File:** `modules/websec.py`, `mod_xss()`
-**Masalah:** payload di-inject via `_inject` yang `urllib.parse.quote()` untuk GET. Jadi `<script>` jadi `%3Cscript%3E`. Server echo `x` yang sudah didecode (biasanya `parse_qs` auto-decode) → body kembali `<script>...` → `p in s` match. **Tapi** kalau server echo versi raw (tidak decode), refleksi encode tidak terdeteksi → false negative. Untuk lab_server (decode) OK.
-
-### A20 — LOW: history `int(n)` tidak di-catch di cli_one
-**File:** `hkall.py`, `mod_history()` dijalankan via `-m history --limit abc`
-**Masalah:** `cli_one` untuk history set `vals = [k or "", l or "30"]`; `l` dari argparse `--limit` string. `mod_history` `int(n)` dalam try/except (ada), jadi aman di interactive. Tapi `cli_one` langsung `MODULES[key][1]()` — `int(n)` di `show(kind, int(n))` dibungkus try/except → tidak crash. Jadi **bukan bug**, diturunkan ke INFO.
-
-### A21 — LOW: count modul/docs inconsistent
-**File:** README + PRD
-**Masalah:** README "30", "29", PRD "20 builtin + 8 websec", audit "29 modul". Sebenarnya 20 builtin (hkall.py MODULES) + 12 plugin (websec 12 + toolbox + hello = 14) → 34 keys unik. Angka docs tidak sinkron. Perlu regenerasi dari `--list`.
-
-### A22 — LOW: MODARGS `--range` idor tidak terpakai
-**File:** `hkall.py`, `cli_one()`
-**Masalah:** `cli_one` skip flag `--kind`/`--limit` untuk history, dan untuk idor `--range` diproses oleh `MODARGS` → dest `range` → `getattr(extra,'range')` benar. Tapi `cli_one` panggil `vals.append(str(v))` — `v` bisa `bool`/None. Untuk `idor`, `--range` nilai "20" OK. Tapi `mod_idor` prompt order: url, range, auth → `GINJ=[url]` dari CLI tidak cukup karena ada `--range` di per-module (terpakai). Tidak bug besar; namun `--auth` ke idor di README contoh `--range 20` — `--auth` flag ada, value `Bearer x` → OK. Verifikasi manual.
-
-### A23 — INFO: README contoh `--cidr` tidak ada di MODARGS
-**File:** `README.md`
-**Masalah:** `hkall -m lan --cidr 192.168.1.0/24` dan `-m arp --cidr ...` — `build_parser` TIDAK mendefinisikan `--cidr`, hanya `--host/--port/--ports/--out/--list/--search`. `parse_known_args` menangkap sisanya, tapi `cli_one` baca `extra.cidr`? `MODARGS` untuk `lan` cuma `{"--host": "cidr (...)"}` — jadi `--cidr` TIDAK ada → contoh docs salah, user harus pakai `--host` untuk cidr. Docs misleading.
-## Kemungkinan Bug / Risiko di Masa Depan (edge cases yang belum terlihat)
-
-### K1 — Dependency stdlib-only dirobohkan oleh environment tanpa modul
-hkall klaim "stdlib only", tapi `mod_arp`/`mitm`/`netcut`/`deauth`/`sniff` pakai `AF_PACKET` + `fcntl` (Linux-only). Di **macOS/WSL** (README klaim macOS jalan): `AF_PACKET` tidak ada → `AttributeError` di `mod_arp` sudah di-guard (`except (OSError, AttributeError)`). Tapi **deauth** & **mitm** `socket.AF_PACKET` dipakai langsung di `socket.socket(socket.AF_PACKET,...)` tanpa fallback guard → di macOS crash `AttributeError: module 'socket' has no attribute 'AF_PACKET'`. macOS/WSL diklaim didukung → ini bug docs-vs-reality. **Fix:** guard di tiap raw-socket modul.
-
-### K2 — `mod_sniff` jamak pkt besar → memory
-`s.recvfrom(65535)` di loop tanpa cap hit; `hits` append tak terbatas untuk traffic padat → memory grow. Untuk lab bounded OK, tapi di jaringan ramai. **Fix:** cap `hits` (mis. 1000) + warn.
-
-### K3 — `mod_spray` aneka request tanpa rate limit → bangun server target sendiri
-Loop seri `for u..for pw..` tanpa sleep; wordlist besar → hammer target. Untuk LAB ok, tapi mudah lupa limit. Sudah dibatasi durasi opsional? Tidak. Tambah `--delay`/batas attempt.
-
-### K4 — `_save` sqlite: data tanpa schema migration
-`CREATE TABLE IF NOT EXISTS` + insert → kalau schema berubah (tambah kolom), tabel lama tidak diubah → `no such column` saat query baru. Sampai sekarang monoton (`kind,target,ts,data`) jadi aman. **Catat** kalau nanti tambah kolom.
-
-### K5 — `config.json` korup
-`load_cfg` `except Exception: pass` → default dipakai diam-diam; user tak tahu config korup/JSON invalid. Sebaiknya warning stderr.
-
-### K6 — `bin/hkall-deps` `set -e` + `|| true`
-`set -e` dihapus efektif oleh `|| true` di tiap baris; install partial. Intentional (best-effort), tapi output sukses palsu. Docs bilang "selesai" walau ada yang gagal.
-
-### K7 — Security: `mod_c2` menerima command dari network tanpa auth
-Listener XOR "obfuscated" bukan auth; siapa pun yang connect bisa kirim command. Untuk LAB own-device ok, tapi jangan pernah dipakai di internet. Fix (jika mau): token/PSK handshake.
-
-### K8 — `install.sh` blind `pkg install` saat non-Termux
-baris `pkg install` tanpa cek platform — di Linux `pkg` tidak ada → `set -e` abort. README install.sh cuma untuk Termux, tapi `install.sh` tidak guard. Guard `command -v pkg`.
-
-### K9 — Keylogger `tty.setraw` tanpa restore di exception awal
-`old = termios.tcgetattr(fd)` diambil setelah `tty.setraw(fd)`? Read ulang: `old` diambil SEBELUM setraw (benar), `finally` restore. Aman. Tapi `tty.setraw` bisa raise bila stdin bukan tty → sudah di-guard `_TERMIOS`. OK.
-
-## Verifikasi / Smoke (dilakukan sesi ini)
-
-- `python3 -m py_compile` semua file `.py` → tidak ada syntax error (dilaporkan di AUDIT sebelumnya; file saat ini konsisten).
-- `lab/lab_server.py` endpoints: `/sqli`, `/xss`, `/user/`, `/act`, `/load` — read-only, bind 127.0.0.1 saja (aman).
-- CLI one-shot `-m scan --host 127.0.0.1 --ports 22,80` — GINJ flow benar.
-- TUI `< /dev/null` → exit bersih (SystemExit di `_readline`).
-
-## Prioritas Rekomendasi
-
-1. **A01/A02 (mitm/netcut restore)** — uji dua host nyata sebelum dipakai; ARP heal paling rawan.
-2. **A11, A09, A10** — validasi input MAC, fake verdict, IP interface.
-3. **K1** — guard AF_PACKET untuk macOS/WSL agar klaim portability jujur.
-4. **A17** — zombie & port 80 eviltwin.
-5. Docs count (A14/A21/A23) — regen dari `--list`.
+| # | Sev | Fix | Status |
+|---|-----|-----|--------|
+| A01 | HIGH | mitm `arf_frame` eksplisit restore arah benar | ✅ |
+| A02 | HIGH | netcut src MAC = own MAC, validasi gw | ✅ |
+| A09 | MED | csrf parse nilai SameSite Lax/Strict | ✅ |
+| A10 | MED | arp sender IP = IP interface asli (UDP trick) | ✅ |
+| A11 | MED | deauth validasi MAC regex sebelum fromhex | ✅ |
+| A12 | MED | exfil meta `rsplit("|",1)` | ✅ |
+| A13 | MED | install.sh zsh case `*/zsh` + guard unset | ✅ |
+| A14/A21 | MED/LOW | README count → 34 module, daftar tanpa nomor | ✅ |
+| A17 | LOW | eviltwin `p.wait(timeout=2)` anti-zombie + guard port 80 | ✅ |
+| A23 | INFO | `--cidr` flag nyata di MODARGS lan/arp | ✅ |
+| K1 | MED | AF_PACKET `except (OSError, AttributeError)` semua modul | ✅ |
+| (baru) | MED | 6× `int(_ask(...))` → `_ask_int` graceful | ✅ |
+| (baru) | MED | `mod_py2exe` `\u0026\u0026` escape literal → `&&` | ✅ |
+| A03 | LOW | XOR mapping dc2 sinkron (bukan bug runtime) — butuh handshake (K7) | ⏳ open |
+| A18 | LOW | c2 session prune pada OSError sudah ada (`SESSIONS.pop`) | ✅ resolved-nochange |
 
 ---
 
-_Dokumen ini hasil analisis statik 2026-10-28. Bug runtime kelas tinggi (A01/A02) butuh uji LAN nyata, bukan sekadar mock._
+## Temuan Baru (sesi ini — belum diedit)
+
+### N01 — LOW: `compile()`/shell jarang diuji di CI
+Tidak ada satupun test; tiap fix sebelumnya diuji manual lewat smoke. `hkall.py` punya `_run` yang mencetak `except Exception` menelan error → bug runtime tersembunyi. **Kemungkinan masa depan:** tambah test smoke script.
+
+### N02 — LOW: `_http_req` timeout 8s pada ddos worker berulang
+`mod_ddos` worker loop `while ... and not (...)` dobel kondisi (A07 asli). Tiap worker hingga 200 thread → 200× timeout 8s bisa terkumpul → durasi total membengkak walau `dur<=60`. Tidak fatal (bounded), tapi req/s dipakai report jadi meleset.
+
+### N03 — MED: `cli_one` boolean `--banner` tidak ter-parse di panggilan `cli()`
+`build_parser` tidak punya `--banner`; wrapper `hkall -m scan --banner --host X --ports Y` → fase-2 parser pnya `--banner`, jadi OK. Tapi `cli_one` check `if v is True` push "y". Benar. Sedangkan docs MANUAL 1.1 contoh `--banner` tidak dipakai → aman. **Verifikasi:** sudah benar di fase-2. BUKAN bug.
+
+### N04 — MED (potensi): `MODARGS` `--banner` di `scan` tidak ditangani bila tanpa `--ports`
+`cli_one`: `if key=="scan" and a.ports: vals.append("n")` — `a.ports` dari fase-1 (parse_known_args). Bila user `-m scan --host X --banner` (tanpa ports), persiapkan `vals += ["1-1000","n"]` → GINJ = [host, "1-1000","n"] tapi `mod_scan` baca urutan host, ports, grab (grab="n"), banner flag di-cli_one tidak masuk GINJ (skip karena bukan di MODARGS dari fase-1? --banner di fase-2 dest banner di extra, bukan a). `cli_one(scan, a, extra)` — a dari fase-1, extra dari fase-2. `--banner` = fase-2, jadi `getattr(extra,'banner')` ada → tapi loop MODARGS skip karena scan punya --banner di MODARGS → loop cek `if flag in (...) continue` — flag `--banner` TIDAK skip (bukan --host/--port/--ports) → `v=extra.banner=True` → `vals.append("y")`. Benar! Lalu scan special-case tidak menimpa GINJ banner krn `if a.ports` false → tambah ["1-1000","n"] SEBELUM "y"?? Urutan: generic push host, ports; lalu per-module push banner "y"; lalu scan special-case `if a.host and not a.ports: vals += ["1-1000","n"]` — ini menimpa! vals = [host, "y", "1-1000", "n"] → GINJ urutan host, y, 1-1000, n → mod_scan baca host✓, ports="y" ✗ salah, grab="1-1000" ✗. **Bug NYATA (low):** `-m scan --host X --banner` (tanpa ports) menghasilkan GINJ cacat. Fix: urutkan banner setelah ports.
+
+### N05 — LOW: `mod_payload` non-obs `HOST,PORT="{host}",{int(port)}` — int port di python-repr, host string; OK. Tapi `xm=True` branch `PORT={port}` string → `int(PORT)` di connect sudah ada. Aman.
+
+### N06 — MED (potensi masa depan): `tools.json` katalog 24 tool tapi `_build_cmd` menangani flag menyatu (`-iface`, `-eval`) dengan menaruh `-iface wlan0` dua argumen — benar untuk getopt. `-T 4` short dengan value: `-T` `4` benar. **Aman.**
+
+### N07 — MED: `mod_idor` POST body dukungan tidak ada
+`mod_idor` hanya GET via `_http_req`. Docs §5.4 tidak sebut POST. Aman (scope).
+
+### N08 — MED (masa depan): `lab_server` tidak handle HEAD/OPTIONS — `do_GET`/`do_POST` saja; HTTP 501 untuk HEAD. `enum` GET aman. Minor.
+
+### N09 — LOW: `mod_enum` regex secret mencetak `BEGIN X PRIVATE` tanpa limit — `secrets` bisa besar. Aman.
+
+### N10 — MED: `mod_arp` hasil `found` de-dupe pakai set comprehension `{x for _,x in ...}` setiap iterasi recv — O(n²) untuk /16. Cap 2048 host → masih OK. Minor.
+
+### N11 — LOW: `install.sh` `case "${SHELL:-}"` dengan `;` setelah blok zsh tanpa `;;` kedua — `esac` langsung. Shell valid (single branch). Aman.
+
+### N12 — MED (masa depan): `mod_ops` `subprocess.run(["timeout","5",...])` butuh `timeout` binary — Termux punya. Linux coreutils ada. Risiko jika `timeout` tak terpasang → FileNotFoundError tidak di-catch (hanya di `_tapi`). `mic()`/`vib()`/`cam()` pakai `subprocess.run` langsung tanpa try → traceback. **Potensi bug:** `termux-microphone-record` tak terpasang → FileNotFoundError crash menu ops.
+
+### N13 — LOW: `_ask_int` fallback pesan `(bad number, pakai {default})` bahasa campur — konsisten dgn kode lain.
+
+### N14 — INFO: `mod_sniff` `hits` append tanpa cap (K2 asli sudah dicatat di ANALISIS lama — masih terbuka). **Tetap open.**
+
+### N15 — LOW (masa depan): `_ask` plugin memakai `__main__.GINJ` — kalau module dipanggil di luar hkall (mis. `python -m modules.websec`), `__main__` adalah library → `GINJ` kosong, fallback `input()` baik. Aman.
+
+### N16 — MED: `mod_websec` orchestrator auto-chain set `__main__.GINJ=[url]` → tiap modul baca url, tapi `mod_sqli` prompt `method` kedua — GINJ cuma [url], mod_sqli `_ask("method")` pop habis → EOI → `GINJ` kosong → input() dari stdin. Di tty OK, non-tty EOF→default. **Aman untuk lab.**
+
+### N17 — LOW: `lab_server` `int(i)<=3` tanpa cek negatif — `-1` di path numeric? `i.isdigit()` false utk `-1`, jadi 404. Aman.
+
+### N18 — MED (masa depan): `mod_dnsspoof` `ipb = bytes(int(x) for x in ip.split("."))` — `ip` tak valid (mis. "a.b.c.d") → ValueError crash (tidak di-catch). `_ask` input user. **Potensi bug:** add try.
+
+### N19 — LOW: `mod_eviltwin` `os.chdir(d)` lalu `SimpleHTTPRequestHandler` serving dir `d` — `index.html` ada. Setelah exit, `os.chdir` tidak di-restore → **cwd process hkall berubah** ke temp → file tersimpan ke temp, dan proses lanjut. **Bug nyata (med):** setelah eviltwin selesai, `os.getcwd()` = temp dir; `data/payload.py` dsb di path absolut tetap OK, tapi relatif path user rusak. Fix: restore cwd di finally.
+
+### N20 — LOW: `mod_eviltwin` `_tf.mkdtemp` tidak dibersihkan — temp dir bocor tiap run. Minor leak.
+
+### N21 — MED (masa depan): `scan_ports` `it=iter(ports)` tanpa lock — `next(it)` aman dgn GIL, tidak perlu lock. Benar.
+
+### N22 — LOW: `main_tui` `ids[int(q)-1]` saat `q.isdigit()` tapi filter aktif — index dihitung dari `ids` (filtered). Benar.
+
+---
+
+## Kemungkinan Bug / Risiko Masa Depan (Terbuka — belum difix)
+
+### K1 — AF_PACKET macOS/WSL (sudah difix ✅)
+
+### K2 — `mod_sniff` unlimited `hits` (N14) — **open**: padat network → memory + `hits` simpan di db besar. Fix: cap 1000 + warn.
+
+### K3 — `mod_spray` tanpa rate-limit/delay — open (backlog)
+
+### K4 — `_save` sqlite tanpa migration — open (catat jangan naikkan schema tanpa migration)
+
+### K5 — config.json korup silent fallback — open (warning stderr)
+
+### K6 — `bin/hkall-deps` `set -e` + `|| true` sukses palsu — open
+
+### K7 — c2 tanpa auth handshake: XOR obfus bukan auth; main mapping XOR bisa salah mix obs/non-obs — open (saran: handshake)
+
+### K8 — install.sh non-Termux `pkg` unguarded — open (TAPI TERMUX-only path; bin/hkall-deps sudah cross-platform; minor)
+
+### K9 — keylog tty guard OK — resolved
+
+### K10 — **`os.getcwd()` berubah oleh eviltwin (N19)** — ✅ FIXED (restore cwd di finally)
+
+### K11 — **`mod_ops` subprocess tanpa try FileNotFoundError (N12)** — ✅ FIXED (cam/vib/mic try/except)
+
+### K12 — **`mod_dnsspoof` ipb ValueError (N18)** — ✅ FIXED (try/except + pesan)
+
+### K13 — **`cli_one` scan banner GINJ urutan cacat (N04)** — ✅ FIXED (special-case scan gabung banner)
+
+### K14 — **N10: arp set comprehension O(n²) per recv** — open: hanya terasa /16; cap 2048 → low.
+
+### K2/K3/K4/K5/K6/K7 — tetap open (dok/catatan masa depan)
+
+---
+
+## Prioritas Rekomendasi Berikutnya
+
+1. **K14 (arp O(n²)) + K7 (c2 handshake) + K2 (sniff hits cap)** — open, belum difix.
+2. K3/K4/K5/K6 — catatan masa depan.
+3. N01/N02 — low.
+
+---
+
+## Verifikasi sesi ini
+- Baca ulang semua sumber: hkall.py (993L), websec.py (715L), toolbox.py (196L), hello.py, lab_server.py, install.sh, bin/hkall, bin/hkall-deps, tools.json, README/MANUAL/USAGE.
+- Commit fix sebelumnya sudah push (`8cf3448`, `4f97693`).
+- **Sesi ini difix:** N04 (scan banner order), K10 (eviltwin cwd restore), K11 (ops subprocess guard), K12 (dnsspoof ipb guard).
+
+---
+_Dokumen ini hasil analisis statik. Bug kelas network (AF_PACKET, ARP) tetap butuh uji LAN nyata._
