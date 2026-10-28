@@ -48,19 +48,14 @@ hkall -m idor --host http://192.168.1.5/api/user/{{id}} --range 20
 - `N` — run module N
 - `0` / `q` — exit
 
-## TUI — 29 builtin+plugin modules
+## TUI — 34 module (builtin + plugin)
 ```
-  [1] Port scanner          [2] Web enumerator       [3] DNS / banner lookup
-  [4] Subdomain brute DNS   [5] Reverse shell gen    [6] C2 listener (multi-session)
-  [7] Keylogger             [8] Exfil client         [9] Exfil server
- [10] Android payload     [11] Shell payload var  [12] LAN host discoverer
- [13] ARP scan            [14] Wifi audit         [15] Persistence
- [16] Device ops          [17] HTTP static server [18] Web form spray
- [19] Config / profile    [20] History (results)  [21] Exit
-  [22] SQLi tester         [23] XSS reflection     [24] CSRF check
- [25] IDOR enumeration    [26] ARP MITM (root)    [27] DNS spoof (root)
- [28] Load test           [29] Orchestrator menu  [30] External tools
+builtin: scan enum whois subd shell c2 keylog exfil recv
+         payload exe2 lan arp wifi persist ops serve spray cfg history
+plugin : sqli xss csrf idor mitm netcut deauth sniff eviltwin dnsspoof ddos
+         websec toolbox hello
 ```
+> Daftar & nomor selalu berubah seiring plugin; jalankan `hkall --list` untuk yang akurat saat ini.
 
 ## CLI one-shot
 ```bash

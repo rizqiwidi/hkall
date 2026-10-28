@@ -24,8 +24,8 @@ else
 fi
 
 # shell completion (bash/zsh) — only if completion file exists
-case "$(basename "$SHELL")" in
-  zsh)  [ -f "$HOME/hkall/bin/hkall-completion.zsh" ] || { echo "  (completion file not present, skip zsh link)"; exit 0; }
+case "${SHELL:-}" in
+  */zsh) [ -f "$HOME/hkall/bin/hkall-completion.zsh" ] || { echo "  (completion file not present, skip zsh link)"; exit 0; }
         mkdir -p "$HOME/.oh-my-zsh/custom" 2>/dev/null
         ln -sf "$HOME/hkall/bin/hkall-completion.zsh" "$HOME/.oh-my-zsh/custom/hkall.zsh" 2>/dev/null \
           && echo "zsh completion linked (reuse ~/.oh-my-zsh/custom)" 2>/dev/null || true ;;

@@ -21,6 +21,9 @@
 | F9 | **INFO** | serve | `int(get_port(...))` OK, bukan bug | — |
 | F10 | **LOW** | dnsspoof | socket UDP tidak ditutup explicit (daemon thread) | ✅ FIXED — socket close di serve(), bind-error surfaced EACCES/EADDRINUSE |
 | F11 | **INFO** | install.sh | `bin/hkall` tidak ter-pack, shell completion zsh hardcode | ✅ FIXED — symlink langsung ke hkall.py, completion kondisional |
+| **F17** | **HIGH** | netcut | DUMMY_MAC `000000000000` — ARP sender all-zero diabaikan banyak stack → netcut no-op | ✅ FIXED — `020000000000` locally-administered |
+| **F18** | **HIGH** | deauth | Raw 802.11 frame 10B header, FC `0x00` (bukan deauth `0xC0`) → AP tolak; +2B bloat | ✅ FIXED — `\xc0\x00\x00\x00` + 24B header |
+| **F19** | **MEDIUM** | sniff | Probe SSID parse offset 24 = IE id → selalu kosong; FC mask `0xfc` salah | ✅ FIXED — baca len@25 + ssid@26, mask `0xf0` |
 
 ---
 
@@ -102,9 +105,12 @@
 - **F8** c2 recv timeout 2s — `if len(d) < 4096: break` — output >4096B lambat terpotong. Fix usul: loop sampai timeout kosong / gunakan `MSG_WAITALL` lebih besar. LOW.
 - **F10** dnsspoof socket close explicit di `finally`.
 - **F11** install.sh: `.gitignore` ignore `bin/`? Cek bukti: `bin/hkall` tidak ada di tree — tail.
-- **F12** toolbox `_build_cmd` — tidak handle flag non-dash (e.g. `iface` vs `--iface`) di tools.json; tiap tool schema bervariasi.
-- **F14** mod_subd: thread unbounded untuk wordlist besar — plus saran batch.
-- **F16** banyak `except Exception: pass` — swallow tanpa log (by design internal, tapi untuk debugging penting).
+- **F12** toolbox `_build_cmd` — flag non-dash terserah whitelist 6 nama; `-iface` (bettercap) kena whitelist → di-drop jadi positional. ✅ FIXED → dispatch generik: `--flag` / `-X` / `-bundled` (e.g. `-iface`) keep flag+value, non-dash positional.
+- **F14** mod_subd — thread **sudah dibatch 64** (`ts[pos:pos+64]`), sama seperti discover. Bukan bug → ✅ RESOLVED (verified, no change). Scan cap 128, spray serial.
+- **F16** banyak `except Exception: pass` — audit semua 10 sites: cleanup, thread connect-skip, restore retry, Popen terminate best-effort, payload docstring. Semua by-design fail-soft; log spam di thread 128. Bukan bug → ✅ RESOLVED (by design, no change). Satu-satunya yang layak log dihapus karena debug ke thread terlalu ribut.
+- **F17** netcut DUMMY_MAC = `000000000000` (null) — banyak stack mengabaikan ARP sender all-zero → netcut tidak bekerja. ✅ FIXED → `020000000000` (locally-administered, tidak routable).
+- **F18** deauth raw fallback: frame 802.11 dibangun `\x00\x00\x00\x00\xff` (10B header, FC=0x00 assoc-req bukan deauth 0xC0) + 2B ekstra → AP menolak. ✅ FIXED → `b"\xc0\x00\x00\x00"+da+sa+bssid+\x00\x00\x07\x00` (24B + reason).
+- **F19** sniff probe: `ssid = pkt[24:].split(b"\x00",1)[0]` — offset 24 adalah IE id, bukan SSID → selalu kosong. ✅ FIXED → baca `pkt[25]` len + `pkt[26:26+slen]`; FC mask `0xf0` (bukan 0xfc).
 
 ---
 

