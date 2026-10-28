@@ -39,9 +39,12 @@ def _save(kind, target, data):
     try:
         with sqlite3.connect(db) as c:
             c.execute("CREATE TABLE IF NOT EXISTS rs(kind, target, ts, data)")
+            cols = [r[1] for r in c.execute("PRAGMA table_info(rs)")]
+            if cols and list(cols) != ["kind", "target", "ts", "data"]:
+                raise sqlite3.DatabaseError(f"schema rs tidak cocok: {cols}")
             c.execute("INSERT INTO rs VALUES(?,?,?,?)", (kind, target, datetime.now().isoformat(), data))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"warning: rs.db bermasalah: {e}", file=sys.stderr)
 
 def _http_req(url, method="GET", data=None, headers=None, timeout=5):
     import urllib.request, urllib.parse
@@ -634,8 +637,9 @@ def mod_ddos():
     stat = {"ok": 0, "err": 0, "bytes": 0, "reqs": [0]}
     lock = threading.Lock()
     t0 = time.time()
+    deadline = t0 + dur
     def worker():
-        while time.time() - t0 < dur and not (time.time() - t0 > dur + 1):
+        while time.time() < deadline:
             st, body, _ = _http_req(url, method)
             with lock:
                 if st: stat["ok"] += 1; stat["bytes"] += len(body)

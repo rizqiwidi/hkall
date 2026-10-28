@@ -105,8 +105,11 @@ Tidak ada satupun test; tiap fix sebelumnya diuji manual lewat smoke. `hkall.py`
 ### N28 — eviltwin temp dir leak — ✅ FIXED (`_tf.rmtree` di finally)
 
 ## Sisa open (dok catatan masa depan, tanpa kode)
-- K4 sqlite migration — WAJIB migration bila schema `rs` berubah.
-- N01 (test otomatis), N02 (ddos timeout bias) — low.
+- (tidak ada — semua temuan yang bisa jadi kode sudah difix)
+
+## N01 — test otomatis — ✅ FIXED (`tests/test_smoke.py`, 12 assert, tanpa framework)
+## N02 — ddos worker kondisi dobel/timeout bias — ✅ FIXED (deadline tunggal)
+### K4 — `_save` sqlite tanpa migration — ✅ FIXED (schema guard `_ensure_rs` + warning, tak crash)
 
 ---
 

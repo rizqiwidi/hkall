@@ -34,14 +34,25 @@ def save_cfg():
 
 # ---------------- results store ----------------
 DB = os.path.join(DATA, "rs.db")
+RS_SCHEMA = ("kind", "target", "ts", "data")
+def _ensure_rs(c):
+    """Create rs table; self-heal bila schema lama beda (K4)."""
+    c.execute("CREATE TABLE IF NOT EXISTS rs(kind, target, ts, data)")
+    cols = [r[1] for r in c.execute("PRAGMA table_info(rs)")]
+    if cols and list(cols) != list(RS_SCHEMA):
+        raise sqlite3.DatabaseError(f"schema rs tidak cocok: {cols} (hapus {DB} atau migrasi manual)")
+
 def save(kind, target, data):
-    with sqlite3.connect(DB) as c:
-        c.execute("CREATE TABLE IF NOT EXISTS rs(kind, target, ts, data)")
-        c.execute("INSERT INTO rs VALUES(?,?,?,?)", (kind, target, datetime.now().isoformat(), data))
+    try:
+        with sqlite3.connect(DB) as c:
+            _ensure_rs(c)
+            c.execute("INSERT INTO rs VALUES(?,?,?,?)", (kind, target, datetime.now().isoformat(), data))
+    except sqlite3.DatabaseError as e:
+        print(f"warning: rs.db bermasalah: {e}", file=sys.stderr)
 
 def show(kind=None, limit=30):
     with sqlite3.connect(DB) as c:
-        c.execute("CREATE TABLE IF NOT EXISTS rs(kind, target, ts, data)")
+        _ensure_rs(c)
         q = "SELECT rowid,* FROM rs"
         if kind: q += " WHERE kind=?"
         q += " ORDER BY rowid DESC LIMIT ?"
